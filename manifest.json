@@ -1,0 +1,93 @@
+{
+  "manifest_version": 3,
+  "name": "Kivara Lingo",
+  "version": "0.1.0",
+  "description": "Learn languages while watching your favorite shows.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabCapture",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8765/*",
+    "*://*.netflix.com/*",
+    "*://*.youtube.com/*",
+    "*://*.primevideo.com/*",
+    "*://*.disneyplus.com/*",
+    "*://*.max.com/*",
+    "*://*.hbomax.com/*",
+    "*://*.udemy.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.netflix.com/*",
+        "*://*.youtube.com/*",
+        "*://*.primevideo.com/*",
+        "*://*.disneyplus.com/*",
+        "*://*.max.com/*",
+        "*://*.hbomax.com/*",
+        "*://*.udemy.com/*"
+      ],
+      "js": [
+        "src/content/index.tsx"
+      ],
+      "all_frames": false,
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "src/assets/icons/icon-16.png",
+      "32": "src/assets/icons/icon-32.png",
+      "48": "src/assets/icons/icon-48.png",
+      "128": "src/assets/icons/icon-128.png"
+    }
+  },
+  "options_ui": {
+    "page": "src/options/index.html",
+    "open_in_tab": true
+  },
+  "commands": {
+    "save_word": {
+      "suggested_key": {
+        "default": "Ctrl+S",
+        "mac": "Command+S"
+      },
+      "description": "Save hovered word to Anki"
+    },
+    "toggle_subtitles": {
+      "suggested_key": {
+        "default": "Alt+C",
+        "mac": "Alt+C"
+      },
+      "description": "Toggle subtitles visibility"
+    },
+    "repeat_cue": {
+      "suggested_key": {
+        "default": "Alt+R",
+        "mac": "Alt+R"
+      },
+      "description": "Repeat current subtitle phrase"
+    },
+    "recapture_frame": {
+      "suggested_key": {
+        "default": "Alt+V",
+        "mac": "Alt+V"
+      },
+      "description": "Recapture video frame manually"
+    }
+  },
+  "icons": {
+    "16": "src/assets/icons/icon-16.png",
+    "32": "src/assets/icons/icon-32.png",
+    "48": "src/assets/icons/icon-48.png",
+    "128": "src/assets/icons/icon-128.png"
+  }
+}

@@ -1,0 +1,74 @@
+import { SubtitleSource, SubtitleCue, CueListener } from './types';
+
+export function attachGenericHtml5(video: HTMLVideoElement): SubtitleSource {
+  const listeners: CueListener[] = [];
+  let currentActiveCue: SubtitleCue | null = null;
+  let activeTrack: TextTrack | null = null;
+
+  const handleCueChange = () => {
+    if (!activeTrack) return;
+    const activeCues = activeTrack.activeCues;
+    if (activeCues && activeCues.length > 0) {
+      const nativeCue = activeCues[0] as VTTCue;
+      currentActiveCue = {
+        id: nativeCue.id || Math.random().toString(),
+        start: nativeCue.startTime * 1000,
+        end: nativeCue.endTime * 1000,
+        // Sometimes VTTCue text has HTML tags like <i>, let's clean them, but for MVP keep raw:
+        text: nativeCue.text,
+        language: activeTrack.language || 'en'
+      };
+      listeners.forEach(l => l([currentActiveCue!]));
+    } else {
+      currentActiveCue = null;
+      listeners.forEach(l => l([]));
+    }
+  };
+
+  const bindTrack = (track: TextTrack) => {
+    if (activeTrack) {
+      activeTrack.oncuechange = null;
+    }
+    activeTrack = track;
+    track.mode = 'hidden'; // Hide the native one
+    track.oncuechange = handleCueChange;
+    // Trigger immediately in case there's already an active cue
+    handleCueChange();
+  };
+
+  // Try to find existing
+  const existingTrack = Array.from(video.textTracks).find(t => t.kind === 'subtitles' || t.kind === 'captions');
+  if (existingTrack) {
+    bindTrack(existingTrack);
+  }
+
+  // Listen for added tracks
+  video.textTracks.addEventListener('addtrack', (e) => {
+    const track = e.track;
+    if (track && (track.kind === 'subtitles' || track.kind === 'captions')) {
+      bindTrack(track);
+    }
+  });
+
+  return {
+    platform: 'generic',
+    onCueChange(listener) {
+      listeners.push(listener);
+    },
+    getCurrentTime() {
+      return video.currentTime * 1000;
+    },
+    getActiveCue() {
+      return currentActiveCue;
+    },
+    seek(timeMs) {
+      video.currentTime = timeMs / 1000;
+    },
+    hideNativeSubtitles() {
+      if (activeTrack) activeTrack.mode = 'hidden';
+    },
+    showNativeSubtitles() {
+      if (activeTrack) activeTrack.mode = 'showing';
+    }
+  };
+}

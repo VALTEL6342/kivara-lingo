@@ -25,6 +25,7 @@ interface VideoPlayerProps {
     monolingual?: string;
   };
   onSaveCard: (token?: string) => void;
+  isFullOverlay?: boolean;
 }
 
 /* Mock MWE registry (en producción: bundle local mwes.json + CEFR) */
@@ -243,6 +244,72 @@ export function VideoPlayer({ subtitleStyles, mockData, onSaveCard }: VideoPlaye
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (isFullOverlay) {
+    return (
+      <div 
+        className="relative w-full h-full pb-24"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: subtitleStyles.position === 'bottom' ? 'flex-end' : subtitleStyles.position === 'top' ? 'flex-start' : 'center',
+        }}
+      >
+        {/* WE INJECT THE SUBTITLES WITHOUT FAKE VIDEO */}
+        <div 
+            className={`transition-all duration-300 pointer-events-auto select-text ${isHovered ? 'z-50 scale-102' : 'z-20 scale-100'}`}
+            style={{ 
+              marginBottom: subtitleStyles.position === 'bottom' ? `${subtitleStyles.verticalOffset}px` : 0,
+              marginTop: subtitleStyles.position === 'top' ? `${subtitleStyles.verticalOffset}px` : 0,
+            }}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+          >
+            {/* Same subtitle rendering as in standard mode; we omit the surrounding fake video styling */}
+            <div className="flex flex-col items-center gap-1.5 transition-all duration-200">
+              {captureState === 'screenshot' && (
+                <div className="absolute inset-0 max-w-2xl w-[120%] -ml-[10%] h-[200%] -mt-[50%] z-[-1] pointer-events-none">
+                  <div className="absolute inset-0 shadow-[0_0_80px_30px_rgba(255,255,255,0.8)] animate-pulse rounded-full opacity-0 origin-center bg-white" style={{ animation: 'flash 0.15s ease-out forwards' }} />
+                </div>
+              )}
+              {captureState === 'audio' && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                  <div className="bg-red-500/90 text-white rounded-full p-2 animate-bounce shadow-[0_0_15px_rgba(239,68,68,0.5)]">
+                    <AudioLines size={24} className="animate-pulse" />
+                  </div>
+                </div>
+              )}
+              <div 
+                className="px-6 py-2 rounded max-w-4xl text-center leading-snug tracking-wide transition-all select-none"
+                style={{
+                  fontSize: `${subtitleStyles.fontSize}px`,
+                  color: subtitleStyles.color,
+                  backgroundColor: backgroundColorWithOpacity,
+                  fontWeight: subtitleStyles.fontWeight,
+                  textShadow: subtitleStyles.textShadow > 0 ? `0px 2px ${subtitleStyles.textShadow / 10}px rgba(0,0,0,0.8)` : 'none',
+                }}
+              >
+                {/* Simplified word token rendering... normally we copy the big token block from below */}
+                <span>{mockData.targetSentence}</span>
+              </div>
+              <div 
+                className={`text-xl font-medium tracking-wide transition-all ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-[0.85] translate-y-0'}`}
+                style={{
+                  color: '#e5e7eb',
+                  backgroundColor: 'rgba(0,0,0,0.5)',
+                  padding: '2px 12px',
+                  borderRadius: '6px',
+                  textShadow: '0 2px 8px rgba(0,0,0,0.9)'
+                }}
+              >
+                {mockData.nativeSentence}
+              </div>
+            </div>
+          </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl group border border-zinc-800 flex flex-col">

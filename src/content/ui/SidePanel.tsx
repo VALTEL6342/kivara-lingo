@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { Subtitles, LayoutGrid, Settings, X, ExternalLink, Moon, Sun } from 'lucide-react';
-import { KivaraLingoLogo } from './KivaraLingoLogo';
-import { SubtitlesTab } from './tabs/SubtitlesTab';
-import { CardsTab } from './tabs/CardsTab';
-import { SettingsTab } from './tabs/SettingsTab';
-import { SubtitleStyles, AnkiMapping } from '../types';
+import { KivaraLingoLogo } from '../../app/components/KivaraLingoLogo';
+import { SubtitlesTab } from '../../app/components/tabs/SubtitlesTab';
+import { CardsTab } from '../../app/components/tabs/CardsTab';
+import { SettingsTab } from '../../app/components/tabs/SettingsTab';
+import { SubtitleStyles, AnkiMapping } from '../../app/types';
 
-interface ExtensionPanelProps {
+interface SidePanelProps {
   isPopupMode: boolean;
   togglePopupMode: () => void;
   isDarkMode: boolean;
@@ -18,7 +18,7 @@ interface ExtensionPanelProps {
   mockData: any;
 }
 
-export function ExtensionPanel({ 
+export function SidePanel({ 
   isPopupMode, 
   togglePopupMode,
   isDarkMode,
@@ -28,7 +28,7 @@ export function ExtensionPanel({
   mapping,
   setMapping,
   mockData
-}: ExtensionPanelProps) {
+}: SidePanelProps) {
   const [activeTab, setActiveTab] = useState<'subtitles' | 'cards' | 'settings'>('cards');
 
   return (
