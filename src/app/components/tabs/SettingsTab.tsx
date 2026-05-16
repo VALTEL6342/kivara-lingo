@@ -113,24 +113,68 @@ export function SettingsTab() {
           title="Traducción"
           headerRight={
             <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-500 normal-case tracking-normal">
-              {translate.provider}
+              {translate.mode === 'chain' ? 'cadena' : translate.provider}
             </span>
           }
         >
-          <Row label="Proveedor">
-            <select
-              value={translate.provider}
-              onChange={(e) =>
-                setTranslate({ ...translate, provider: e.target.value as TranslateProvider })
-              }
-              className="sl-select w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-            >
-              <option value="offline">Offline (diccionario local)</option>
-              <option value="deepl">DeepL</option>
-              <option value="google">Google Cloud Translate</option>
-              <option value="libretranslate">LibreTranslate</option>
-            </select>
+          <Row label="Modo">
+            <SegmentedControl
+              options={[
+                { v: 'chain', l: 'Cadena' },
+                { v: 'single', l: 'Único' },
+              ]}
+              value={translate.mode}
+              onChange={(v) => setTranslate({ ...translate, mode: v as 'chain' | 'single' })}
+            />
           </Row>
+          {translate.mode === 'chain' && (
+            <>
+              <Row label="Usar nivel free">
+                <Toggle
+                  on={translate.tiersEnabled.free}
+                  onChange={(v) =>
+                    setTranslate({
+                      ...translate,
+                      tiersEnabled: { ...translate.tiersEnabled, free: v },
+                    })
+                  }
+                />
+              </Row>
+              <Row label="Usar nivel premium">
+                <Toggle
+                  on={translate.tiersEnabled.premium}
+                  onChange={(v) =>
+                    setTranslate({
+                      ...translate,
+                      tiersEnabled: { ...translate.tiersEnabled, premium: v },
+                    })
+                  }
+                />
+              </Row>
+              <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug -mt-0.5">
+                Orden: diccionario offline → free (MyMemory, Lingva) → premium (DeepL,
+                Google, LibreTranslate). Los premium sin API key se saltean automáticamente.
+              </p>
+            </>
+          )}
+          {translate.mode === 'single' && (
+            <Row label="Proveedor">
+              <select
+                value={translate.provider}
+                onChange={(e) =>
+                  setTranslate({ ...translate, provider: e.target.value as TranslateProvider })
+                }
+                className="sl-select w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+              >
+                <option value="offline">Offline (diccionario local)</option>
+                <option value="mymemory">MyMemory (free)</option>
+                <option value="lingva">Lingva (free)</option>
+                <option value="libretranslate">LibreTranslate</option>
+                <option value="deepl">DeepL</option>
+                <option value="google">Google Cloud Translate</option>
+              </select>
+            </Row>
+          )}
           <Row label="Idioma destino">
             <input
               type="text"
@@ -140,50 +184,61 @@ export function SettingsTab() {
               className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
             />
           </Row>
-          {translate.provider === 'deepl' && (
-            <Row label="DeepL API token">
-              <input
-                type="password"
-                value={translate.deeplToken}
-                onChange={(e) => setTranslate({ ...translate, deeplToken: e.target.value })}
-                placeholder="xxxxxxxx:fx para Free, sin :fx para Pro"
-                className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-              />
-            </Row>
-          )}
-          {translate.provider === 'google' && (
-            <Row label="Google Cloud API key">
-              <input
-                type="password"
-                value={translate.googleToken}
-                onChange={(e) => setTranslate({ ...translate, googleToken: e.target.value })}
-                placeholder="AIza..."
-                className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-              />
-            </Row>
-          )}
-          {translate.provider === 'libretranslate' && (
-            <>
-              <Row label="LibreTranslate URL">
-                <input
-                  type="text"
-                  value={translate.libreTranslateUrl}
-                  onChange={(e) => setTranslate({ ...translate, libreTranslateUrl: e.target.value })}
-                  placeholder="https://libretranslate.com"
-                  className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-                />
-              </Row>
-              <Row label="API key (opcional)">
-                <input
-                  type="password"
-                  value={translate.libreTranslateToken}
-                  onChange={(e) => setTranslate({ ...translate, libreTranslateToken: e.target.value })}
-                  placeholder="déjalo vacío para instancias públicas"
-                  className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-                />
-              </Row>
-            </>
-          )}
+          {/* MyMemory email (raises 5k → 50k chars/day) */}
+          <Row label="Email MyMemory (opcional)">
+            <input
+              type="email"
+              value={translate.myMemoryEmail}
+              onChange={(e) => setTranslate({ ...translate, myMemoryEmail: e.target.value })}
+              placeholder="ej. you@example.com — sube cuota a 50 000 chars/día"
+              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+            />
+          </Row>
+          <Row label="Lingva URL">
+            <input
+              type="text"
+              value={translate.lingvaUrl}
+              onChange={(e) => setTranslate({ ...translate, lingvaUrl: e.target.value })}
+              placeholder="https://lingva.thedaviddelta.com"
+              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+            />
+          </Row>
+          <Row label="DeepL API token">
+            <input
+              type="password"
+              value={translate.deeplToken}
+              onChange={(e) => setTranslate({ ...translate, deeplToken: e.target.value })}
+              placeholder="xxxxxxxx:fx para Free, sin :fx para Pro"
+              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+            />
+          </Row>
+          <Row label="Google Cloud API key">
+            <input
+              type="password"
+              value={translate.googleToken}
+              onChange={(e) => setTranslate({ ...translate, googleToken: e.target.value })}
+              placeholder="AIza..."
+              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+            />
+          </Row>
+          <Row label="LibreTranslate URL">
+            <input
+              type="text"
+              value={translate.libreTranslateUrl}
+              onChange={(e) => setTranslate({ ...translate, libreTranslateUrl: e.target.value })}
+              placeholder="https://libretranslate.com o http://localhost:5000"
+              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+            />
+          </Row>
+          <Row label="LibreTranslate key (opcional)">
+            <input
+              type="password"
+              value={translate.libreTranslateToken}
+              onChange={(e) => setTranslate({ ...translate, libreTranslateToken: e.target.value })}
+              placeholder="déjalo vacío para instancias públicas o self-host"
+              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+            />
+          </Row>
           <Row label="Caché (días)" value={`${translate.cacheTtlDays}d`}>
             <input
               type="range" min={1} max={90} step={1} value={translate.cacheTtlDays}

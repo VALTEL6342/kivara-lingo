@@ -103,10 +103,56 @@ export interface CleanupSettings {
   hideShadows: boolean;
 }
 
-export type TranslateProvider = 'offline' | 'deepl' | 'google' | 'libretranslate';
+/**
+ * Concrete translation providers (in roughly the same order they're tried
+ * inside a chain): the bundled offline dictionary, two zero-config FREE
+ * networked services, three BYOK premium services, and a sentinel value
+ * ('none') we use when callers want to signal "no remote translation at all"
+ * inside a single-provider config.
+ *
+ * The chain mode walks them in tier order (offline → free → premium) and
+ * returns the first successful result.
+ */
+export type TranslateProvider =
+  | 'offline'
+  | 'mymemory'
+  | 'lingva'
+  | 'libretranslate'
+  | 'deepl'
+  | 'google';
+
+export type TranslateMode = 'single' | 'chain';
+
+export type TranslateTier = 'offline' | 'free' | 'premium';
 
 export interface TranslateSettings {
+  /**
+   * Selection strategy:
+   *  - 'single' picks just `provider` (legacy behaviour).
+   *  - 'chain' walks `tiersEnabled` from offline → free → premium until one
+   *    succeeds. This is the recommended default.
+   */
+  mode: TranslateMode;
+  /** Active provider when `mode === 'single'`. */
   provider: TranslateProvider;
+  /**
+   * Which tiers participate in chain mode. Offline is always tried first and
+   * is non-disable-able (the bundled dictionary is free and fast).
+   */
+  tiersEnabled: { free: boolean; premium: boolean };
+  /**
+   * Ordered list of free providers to attempt in chain mode. The default is
+   * `['mymemory', 'lingva']` — MyMemory first because it returns higher quality
+   * for short tokens, Lingva second because it's an unauthenticated Google
+   * proxy and may rate-limit when used heavily.
+   */
+  freeChain: TranslateProvider[];
+  /**
+   * Ordered list of premium providers tried after the free chain. Each one
+   * requires its own credential (see fields below); a provider with a missing
+   * credential is silently skipped.
+   */
+  premiumChain: TranslateProvider[];
   /** Native target language (BCP-47). Default 'es'. */
   targetLanguage: string;
   /** DeepL API token (free or pro) */
@@ -117,6 +163,17 @@ export interface TranslateSettings {
   libreTranslateUrl: string;
   /** Optional API key for paid LibreTranslate instances */
   libreTranslateToken: string;
+  /**
+   * Optional email passed to MyMemory's `de` parameter. Anonymous = 5000
+   * chars/day; with an email = 50000 chars/day.
+   */
+  myMemoryEmail: string;
+  /**
+   * Lingva base URL. Defaults to a well-known mirror. Self-host with
+   * `docker run -p 3000:3000 thedaviddelta/lingva-translate` and point this at
+   * `http://localhost:3000`.
+   */
+  lingvaUrl: string;
   /** Cache TTL in days (default 30) */
   cacheTtlDays: number;
 }
@@ -277,12 +334,36 @@ export interface OnboardingState {
 
 export interface DictionaryEntry {
   token: string;
+  /**
+   * 'word' = single-word entry.
+   * 'phrase' = multi-word expression. The render layer differentiates idiomatic
+   * MWEs (e.g. "kick the bucket") from phrasal verbs (e.g. "look up") via the
+   * optional `phraseKind` field below.
+   */
   type: 'word' | 'phrase';
+  /**
+   * Optional sub-classification for phrase entries:
+   *  - 'idiom'   — figurative meaning, ámbar-punteado in UI (default for phrase).
+   *  - 'phrasal' — phrasal verb, rendered with a solid azul underline.
+   */
+  phraseKind?: 'idiom' | 'phrasal';
   phonetic?: string;
   translation: string;
+  /**
+   * When the dictionary hit was resolved via the lemmatizer (e.g. user looked
+   * up "running" and we returned the entry for "run"), the lemma is recorded
+   * here so the popover header can show "running → run".
+   */
+  lemmaOf?: string;
   bilingual?: string;
   monolingual?: string;
   level?: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
+  /**
+   * Source attribution surfaced in the popover footer. Useful for chain-mode
+   * lookups so the user can see whether the translation came from the bundled
+   * dictionary, MyMemory, DeepL, etc.
+   */
+  source?: string;
 }
 
 export interface CueSnapshot {

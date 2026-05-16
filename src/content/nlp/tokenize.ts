@@ -1,19 +1,62 @@
 import type { DictionaryEntry } from '../../shared/types';
 import { getDictionary, lookupDictionary } from './dictionary';
+import { isLikelyProperNoun, lemmaCandidates } from './lemma';
 
-export type TokenKind = 'mwe' | 'known' | 'unknown' | 'punct';
+/**
+ * The full token taxonomy after the Phase 2 audit.
+ *
+ *  - mwe       : multi-word expression in the dictionary (idiom or phrasal).
+ *  - known     : single word in the dictionary (incl. via lemma fallback).
+ *  - unknown   : single word NOT in the dictionary and NOT a proper noun.
+ *                Still rendered interactively — hover triggers a remote
+ *                translation lookup. Save is allowed.
+ *  - ignored   : auto-classified as a proper noun (or user opted to hide).
+ *                Rendered as plain text with no affordance.
+ *  - mastered  : the user has marked this token as fully learnt. Rendered with
+ *                opacity so it stops competing for visual attention. Hover
+ *                still works (compact popover).
+ *  - punct     : whitespace / punctuation. Non-interactive.
+ *
+ * The three flag-style states from the spec (`isSaved`, `isHovered`,
+ * `expanded`) are transverse and live on the Token object, not on `kind`.
+ */
+export type TokenKind = 'mwe' | 'known' | 'unknown' | 'ignored' | 'mastered' | 'punct';
+
+/**
+ * Optional sub-classification for MWE tokens. Surfaced in the popover so the
+ * UI can tint phrasal verbs differently from idioms.
+ */
+export type TokenMweKind = 'idiom' | 'phrasal';
 
 export interface Token {
   text: string;
   /** Lowercased canonical key. For MWE = the phrase. */
   key: string;
   kind: TokenKind;
+  /** When kind === 'mwe', whether it's an idiom or a phrasal verb. */
+  mweKind?: TokenMweKind;
+  /**
+   * When the dictionary hit came from the lemmatizer (e.g. user hovered
+   * "running" but we matched "run"), this records the resolved lemma so the
+   * popover header can show "running → run".
+   */
+  lemma?: string;
 }
 
 /**
- * Greedy tokenizer. Matches MWEs (up to MAX_MWE_LEN words) first, then falls
- * back to single words. Whitespace and punctuation are preserved as 'punct'
- * tokens so the output reconstructs the original cue verbatim.
+ * Greedy tokenizer.
+ *
+ * Behaviour:
+ *   1. Scan word groups longest-first up to MAX_MWE_LEN looking for an MWE
+ *      hit in the dictionary. If found and not in `expanded`, emit as 'mwe'.
+ *   2. For single-word fallbacks, look up the literal lowercased token first.
+ *   3. If that misses, try lemma candidates from `lemmaCandidates()`. The
+ *      first dictionary hit wins; record the resolved lemma on the token.
+ *   4. If still no hit, decide between 'unknown' and 'ignored' using
+ *      `isLikelyProperNoun()` (capitalized mid-sentence + not in dict).
+ *
+ * `expanded` lets the user manually break apart an MWE; tokens inside an
+ * expanded MWE are emitted as their individual single-word tokens instead.
  */
 const MAX_MWE_LEN = 5;
 
@@ -21,6 +64,19 @@ export function tokenizeSentence(
   sentence: string,
   expanded: Set<string> = new Set(),
   lang = 'en',
+  /**
+   * Optional set of tokens (lower-cased keys or MWE phrases) the user has
+   * marked as `ignored` — the tokenizer applies this as a final override so
+   * proper nouns / blacklisted words stop highlighting without modifying the
+   * dictionary.
+   */
+  ignored: Set<string> = new Set(),
+  /**
+   * Optional set of tokens (lower-cased keys or MWE phrases) the user has
+   * marked as `mastered` — same idea as ignored but kept interactive with a
+   * dimmed appearance.
+   */
+  mastered: Set<string> = new Set(),
 ): Token[] {
   const raw = sentence.match(/[\w']+|[^\w\s]+|\s+/g) ?? [];
   const words: { text: string; idx: number }[] = [];
@@ -34,11 +90,21 @@ export function tokenizeSentence(
   let i = 0;
   while (i < words.length) {
     let matched = false;
+    // 1. Try MWE matches (longest first).
     for (let len = Math.min(MAX_MWE_LEN, words.length - i); len >= 2; len--) {
       const phrase = words.slice(i, i + len).map((w) => w.text).join(' ').toLowerCase();
-      if (dict[phrase]?.type === 'phrase' && !expanded.has(phrase)) {
+      const entry = dict[phrase];
+      if (entry?.type === 'phrase' && !expanded.has(phrase)) {
         const text = words.slice(i, i + len).map((w) => w.text).join(' ');
-        wordKey.set(words[i].idx, { text, key: phrase, kind: 'mwe' });
+        let kind: TokenKind = 'mwe';
+        if (ignored.has(phrase)) kind = 'ignored';
+        else if (mastered.has(phrase)) kind = 'mastered';
+        wordKey.set(words[i].idx, {
+          text,
+          key: phrase,
+          kind,
+          mweKind: entry.phraseKind ?? 'idiom',
+        });
         for (let k = 1; k < len; k++) {
           wordKey.set(words[i + k].idx, { text: '', key: '', kind: 'mwe' });
         }
@@ -47,13 +113,53 @@ export function tokenizeSentence(
         break;
       }
     }
-    if (!matched) {
-      const w = words[i];
-      const lower = w.text.toLowerCase();
-      const known = !!dict[lower];
-      wordKey.set(w.idx, { text: w.text, key: lower, kind: known ? 'known' : 'unknown' });
-      i++;
+    if (matched) continue;
+
+    // 2. Single-word fallback: literal → lemma candidates.
+    const w = words[i];
+    const literal = w.text.toLowerCase();
+    let resolvedKey = literal;
+    let resolvedLemma: string | undefined;
+    let isKnown = !!dict[literal];
+
+    if (!isKnown) {
+      // Try lemma candidates. lemmaCandidates() always includes the literal
+      // first; skip index 0 since we already tested it.
+      const candidates = lemmaCandidates(w.text);
+      for (let c = 1; c < candidates.length; c++) {
+        if (dict[candidates[c]]) {
+          isKnown = true;
+          resolvedKey = candidates[c];
+          resolvedLemma = candidates[c];
+          break;
+        }
+      }
     }
+
+    // 3. Decide final kind.
+    let kind: TokenKind;
+    if (ignored.has(resolvedKey) || ignored.has(literal)) {
+      kind = 'ignored';
+    } else if (mastered.has(resolvedKey) || mastered.has(literal)) {
+      kind = 'mastered';
+    } else if (isKnown) {
+      kind = 'known';
+    } else {
+      const cuePos: 'start' | 'middle' | 'end' =
+        i === 0 ? 'start' : i === words.length - 1 ? 'end' : 'middle';
+      // Proper-noun heuristic — only applies when the dictionary doesn't have
+      // the word (otherwise dictionary wins). Mid-sentence capitalized words
+      // (Nicola, Pedro) get silently demoted to 'ignored' to cut visual noise.
+      kind = isLikelyProperNoun(w.text, cuePos) ? 'ignored' : 'unknown';
+    }
+
+    wordKey.set(w.idx, {
+      text: w.text,
+      key: resolvedKey,
+      kind,
+      lemma: resolvedLemma,
+    });
+    i++;
   }
 
   const tokens: Token[] = [];
@@ -68,13 +174,24 @@ export function tokenizeSentence(
   return tokens;
 }
 
-/** Returns metadata for a token or a placeholder entry. */
+/**
+ * Returns dictionary metadata for a token. Falls back to lemma candidates so
+ * "running" returns the entry for "run". Returns a placeholder entry when
+ * nothing is found.
+ */
 export function lookup(token: string, lang = 'en'): DictionaryEntry {
-  return (
-    lookupDictionary(token, lang) ?? {
-      token,
-      type: token.includes(' ') ? 'phrase' : 'word',
-      translation: '—',
-    }
-  );
+  const literal = lookupDictionary(token, lang);
+  if (literal) return literal;
+
+  const candidates = lemmaCandidates(token);
+  for (let i = 1; i < candidates.length; i++) {
+    const hit = lookupDictionary(candidates[i], lang);
+    if (hit) return { ...hit, token };
+  }
+
+  return {
+    token,
+    type: token.includes(' ') ? 'phrase' : 'word',
+    translation: '—',
+  };
 }
