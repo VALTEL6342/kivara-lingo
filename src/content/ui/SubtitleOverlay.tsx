@@ -287,18 +287,53 @@ export function SubtitleOverlay({
                 if (tok.kind === 'punct') {
                   return <React.Fragment key={tok.key + i}>{tok.text}</React.Fragment>;
                 }
+                // `ignored` tokens render exactly like punct text — no
+                // affordance, no popover, no hover state. This is how the
+                // tokenizer hides auto-classified proper nouns.
+                if (tok.kind === 'ignored') {
+                  return (
+                    <span key={tok.key + i} className="opacity-90">
+                      {tok.text}
+                    </span>
+                  );
+                }
                 const isTokHovered = hoveredKey === tok.key;
                 const isSaved = savedTokens.has(tok.key.toLowerCase());
+                // After the Phase 2 audit we make `unknown` interactive too —
+                // hovering triggers the remote translation chain inside
+                // WordPopover. The visual affordance is much subtler than
+                // known/mwe so it doesn't compete for attention.
+                const isInteractive =
+                  tok.kind === 'mwe' ||
+                  tok.kind === 'known' ||
+                  tok.kind === 'unknown' ||
+                  tok.kind === 'mastered';
 
-                const colorClass = isTokHovered
-                  ? 'text-white bg-indigo-600 shadow-[0_2px_8px_rgba(99,102,241,0.45)]'
-                  : isSaved
-                    ? 'text-emerald-300 border-b-2 border-emerald-400/70 hover:bg-emerald-400/10'
-                    : tok.kind === 'mwe'
-                      ? 'text-amber-300 border-b-2 border-amber-400 border-dotted hover:bg-amber-400/15'
-                      : tok.kind === 'known'
-                        ? 'border-b border-zinc-300/40 border-dashed hover:text-white hover:bg-white/10'
-                        : 'opacity-90';
+                let colorClass: string;
+                if (isTokHovered) {
+                  colorClass =
+                    'text-white bg-indigo-600 shadow-[0_2px_8px_rgba(99,102,241,0.45)]';
+                } else if (isSaved) {
+                  colorClass =
+                    'text-emerald-300 border-b-2 border-emerald-400/70 hover:bg-emerald-400/10';
+                } else if (tok.kind === 'mwe' && tok.mweKind === 'phrasal') {
+                  // Phrasal verbs use a solid azul underline (distinct from
+                  // idiomatic MWEs) to signal they're grammatical units.
+                  colorClass =
+                    'text-sky-300 border-b-2 border-sky-400 hover:bg-sky-400/15';
+                } else if (tok.kind === 'mwe') {
+                  colorClass =
+                    'text-amber-300 border-b-2 border-amber-400 border-dotted hover:bg-amber-400/15';
+                } else if (tok.kind === 'known') {
+                  colorClass =
+                    'border-b border-zinc-300/40 border-dashed hover:text-white hover:bg-white/10';
+                } else if (tok.kind === 'mastered') {
+                  colorClass = 'opacity-50 hover:opacity-100 hover:bg-white/5';
+                } else {
+                  // unknown — interactive but with the most subtle affordance.
+                  colorClass =
+                    'opacity-80 hover:opacity-100 hover:bg-white/10 hover:underline hover:decoration-dotted hover:decoration-zinc-400/70 hover:underline-offset-2';
+                }
 
                 const parentForSplit = tok.kind !== 'mwe' ? findParentMWE(tok.key) : null;
                 const wheelable = tok.kind === 'mwe' || !!parentForSplit;
@@ -325,11 +360,11 @@ export function SubtitleOverlay({
                 return (
                   <span key={tok.key + i} className="relative inline-block">
                     <span
-                      onMouseEnter={() => tok.kind !== 'unknown' && handleTokenEnter(tok.key)}
+                      onMouseEnter={() => isInteractive && handleTokenEnter(tok.key)}
                       onMouseLeave={handleTokenLeave}
                       onWheel={handleWheel}
                       className={`relative rounded px-0.5 transition-all duration-150 ${
-                        tok.kind !== 'unknown' ? 'cursor-help' : ''
+                        isInteractive ? 'cursor-help' : ''
                       } ${colorClass}`}
                     >
                       {tok.text}
@@ -337,7 +372,7 @@ export function SubtitleOverlay({
                         <Check size={9} className="inline-block ml-0.5 -mt-1 text-emerald-400" strokeWidth={3} />
                       )}
                     </span>
-                    {isTokHovered && tok.kind !== 'unknown' && (
+                    {isTokHovered && isInteractive && (
                       <WordPopover
                         visible={true}
                         onMouseEnter={() => handleTokenEnter(tok.key)}
@@ -347,6 +382,8 @@ export function SubtitleOverlay({
                         sourceLang={cueLanguage}
                         includeAi={includeAi}
                         kind={tok.kind}
+                        mweKind={tok.mweKind}
+                        lemma={tok.lemma}
                         isExpanded={expandedMWEs.has(tok.key)}
                         isSaved={isSaved}
                         parentMWE={tok.kind !== 'mwe' ? findParentMWE(tok.key) : null}

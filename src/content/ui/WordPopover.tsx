@@ -22,7 +22,11 @@ interface WordPopoverProps {
   sourceLang?: string;
   /** Whether to ask the background to invoke the AI provider on this hover. */
   includeAi?: boolean;
-  kind: 'mwe' | 'known' | 'unknown' | 'punct';
+  kind: 'mwe' | 'known' | 'unknown' | 'mastered' | 'ignored' | 'punct';
+  /** Sub-type for MWE tokens (idiom vs phrasal verb). */
+  mweKind?: 'idiom' | 'phrasal';
+  /** Resolved lemma if the dictionary hit came from the lemmatizer. */
+  lemma?: string;
   isExpanded: boolean;
   isSaved: boolean;
   parentMWE: string | null;
@@ -37,6 +41,14 @@ interface ResolveState {
   /** True while waiting on the remote translator (entry comes from neither cache nor dict). */
   remoteLoading: boolean;
   remoteError: string | null;
+  /**
+   * Source / provider attribution for the translation currently shown.
+   *  - 'dictionary' — came from the bundled offline JSON.
+   *  - One of the TranslateProvider strings (mymemory / lingva / deepl / …)
+   *    — came from a remote provider.
+   *  - 'cache' — remote-sourced but served from the IndexedDB cache.
+   */
+  source: string | null;
   ai: AiEnrichment | null;
   /** True while waiting on the AI enrichment wave. */
   aiLoading: boolean;
@@ -47,6 +59,7 @@ const INITIAL_STATE: ResolveState = {
   entry: null,
   remoteLoading: false,
   remoteError: null,
+  source: null,
   ai: null,
   aiLoading: false,
   aiError: null,
@@ -67,6 +80,12 @@ function useResolveWord(
       ...INITIAL_STATE,
       entry: local,
       remoteLoading: !local,
+      // Even when the local dict produces a hit we still attempt a remote
+      // lookup in chain mode — the popover prefers the local entry for
+      // phonetics + level metadata but augments with the remote translation
+      // when our dict only has a tilde-placeholder. Setting source eagerly
+      // here so the badge has something to show during the loading window.
+      source: local ? 'dictionary' : null,
       aiLoading: includeAi,
     });
     if (!token.trim()) return;
@@ -111,20 +130,29 @@ function applyWaves(waves: ResolveWordWave[], setState: React.Dispatch<React.Set
     if (wave.stage === 'local') {
       setState((prev) => ({ ...prev, entry: prev.entry ?? wave.entry ?? null }));
     } else if (wave.stage === 'remote') {
-      setState((prev) => ({
-        ...prev,
-        remoteLoading: false,
-        remoteError: null,
-        entry:
-          prev.entry?.translation && prev.entry.translation !== '—'
+      setState((prev) => {
+        const hadGoodLocal =
+          prev.entry?.translation && prev.entry.translation !== '—';
+        return {
+          ...prev,
+          remoteLoading: false,
+          remoteError: null,
+          source: hadGoodLocal
+            ? prev.source ?? 'dictionary'
+            : wave.cached
+              ? 'cache'
+              : wave.provider,
+          entry: hadGoodLocal
             ? prev.entry
             : {
                 token: prev.entry?.token ?? '',
                 type: prev.entry?.type ?? 'word',
                 translation: wave.translation,
                 bilingual: wave.translation,
+                source: wave.provider,
               },
-      }));
+        };
+      });
     } else if (wave.stage === 'ai') {
       setState((prev) => ({ ...prev, ai: wave.data, aiLoading: false, aiError: null }));
     } else if (wave.stage === 'error') {
@@ -157,6 +185,8 @@ export function WordPopover({
   sourceLang = 'en',
   includeAi = false,
   kind,
+  mweKind,
+  lemma,
   isExpanded,
   isSaved,
   parentMWE,
@@ -174,6 +204,9 @@ export function WordPopover({
       translation: resolved.remoteLoading ? '' : '—',
     };
   const isMWE = kind === 'mwe';
+  const isPhrasal = isMWE && mweKind === 'phrasal';
+  const isUnknown = kind === 'unknown';
+  const isMastered = kind === 'mastered';
 
   return (
     <div
@@ -218,9 +251,29 @@ export function WordPopover({
             </button>
             <div className="flex items-baseline gap-1.5 min-w-0 flex-wrap">
               <span className="text-white font-semibold text-sm leading-tight normal-case">{meta.token || token}</span>
-              {isMWE && (
+              {isPhrasal && (
+                <span className="text-[9px] font-bold uppercase tracking-wider text-sky-300 bg-sky-500/10 ring-1 ring-sky-500/25 px-1 py-px rounded shrink-0">
+                  Phrasal
+                </span>
+              )}
+              {isMWE && !isPhrasal && (
                 <span className="text-[9px] font-bold uppercase tracking-wider text-amber-300 bg-amber-500/10 ring-1 ring-amber-500/25 px-1 py-px rounded shrink-0">
                   MWE
+                </span>
+              )}
+              {isUnknown && (
+                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-700/40 ring-1 ring-zinc-600/40 px-1 py-px rounded shrink-0">
+                  Sin dicc.
+                </span>
+              )}
+              {isMastered && (
+                <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-700/40 ring-1 ring-zinc-600/40 px-1 py-px rounded shrink-0">
+                  Dominada
+                </span>
+              )}
+              {lemma && lemma !== token.toLowerCase() && (
+                <span className="text-[10px] text-zinc-400 normal-case" title={`Forma base: ${lemma}`}>
+                  → {lemma}
                 </span>
               )}
               {meta.level && (
@@ -262,6 +315,15 @@ export function WordPopover({
           {resolved.remoteError && !meta.translation && (
             <div className="text-[10px] text-rose-300/80 normal-case">
               No se pudo traducir: {resolved.remoteError}
+            </div>
+          )}
+          {/* Provider attribution — same pattern Trancy/Language Reactor use.
+              Helps the user understand whether they're seeing a dictionary
+              entry, a free-tier API response, or a premium one. */}
+          {(resolved.source || meta.source) && (
+            <div className="text-[9px] uppercase tracking-wider text-zinc-500 normal-case pt-0.5">
+              <span className="text-zinc-600">via </span>
+              {formatSource(resolved.source ?? meta.source ?? null)}
             </div>
           )}
         </div>
@@ -393,4 +455,36 @@ function PopoverAction({ icon, label }: { icon: React.ReactNode; label: string }
 
 function PopoverDivider() {
   return <div className="w-px bg-zinc-800/80" />;
+}
+
+/**
+ * Human-readable provider label for the popover footer.
+ * Keeps marketing-y names short so they fit on one line.
+ */
+function formatSource(source: string | null): string {
+  switch (source) {
+    case null:
+    case undefined:
+      return '\u2014';
+    case 'dictionary':
+      return 'Diccionario offline';
+    case 'cache':
+      return 'Caché';
+    case 'mymemory':
+      return 'MyMemory (free)';
+    case 'lingva':
+      return 'Lingva (free)';
+    case 'libretranslate':
+      return 'LibreTranslate';
+    case 'deepl':
+      return 'DeepL';
+    case 'google':
+      return 'Google Translate';
+    case 'chain':
+      return 'Cadena';
+    case 'offline':
+      return 'Offline';
+    default:
+      return source;
+  }
 }

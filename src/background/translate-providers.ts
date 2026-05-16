@@ -12,6 +12,12 @@ export interface ProviderError {
   ok: false;
   error: string;
   provider: TranslateProvider;
+  /**
+   * True for errors that are likely transient (network, timeout, 5xx). Chain
+   * mode uses this hint to decide whether to retry the same provider on the
+   * next call or move on permanently for this session.
+   */
+  transient?: boolean;
 }
 
 const TIMEOUT_MS = 5000;
@@ -27,6 +33,8 @@ function withTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
  *  - DeepL upper-cases target codes and uses "EN-US" / "PT-BR" instead of "en" / "pt".
  *  - Google accepts plain lowercase or BCP-47.
  *  - LibreTranslate uses two-letter codes.
+ *  - MyMemory uses BCP-47-ish pairs like "en|es".
+ *  - Lingva uses lowercase two-letter codes.
  */
 function toDeeplCode(code: string, opts: { isTarget: boolean }): string {
   const c = code.toLowerCase();
@@ -68,14 +76,24 @@ async function callDeepL(
       body: body.toString(),
     });
     if (!res.ok) {
-      return { ok: false, error: `DeepL ${res.status}`, provider: 'deepl' };
+      return {
+        ok: false,
+        error: `DeepL ${res.status}`,
+        provider: 'deepl',
+        transient: res.status >= 500 || res.status === 429,
+      };
     }
     const json = (await res.json()) as { translations?: Array<{ text: string }> };
     const translated = json.translations?.[0]?.text?.trim();
     if (!translated) return { ok: false, error: 'DeepL empty response', provider: 'deepl' };
     return { ok: true, translatedText: translated, provider: 'deepl' };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'DeepL error', provider: 'deepl' };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'DeepL error',
+      provider: 'deepl',
+      transient: true,
+    };
   }
 }
 
@@ -100,7 +118,12 @@ async function callGoogle(
       }),
     });
     if (!res.ok) {
-      return { ok: false, error: `Google ${res.status}`, provider: 'google' };
+      return {
+        ok: false,
+        error: `Google ${res.status}`,
+        provider: 'google',
+        transient: res.status >= 500 || res.status === 429,
+      };
     }
     const json = (await res.json()) as {
       data?: { translations?: Array<{ translatedText: string }> };
@@ -109,7 +132,12 @@ async function callGoogle(
     if (!translated) return { ok: false, error: 'Google empty response', provider: 'google' };
     return { ok: true, translatedText: translated, provider: 'google' };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Google error', provider: 'google' };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Google error',
+      provider: 'google',
+      transient: true,
+    };
   }
 }
 
@@ -134,7 +162,12 @@ async function callLibreTranslate(
       }),
     });
     if (!res.ok) {
-      return { ok: false, error: `LibreTranslate ${res.status}`, provider: 'libretranslate' };
+      return {
+        ok: false,
+        error: `LibreTranslate ${res.status}`,
+        provider: 'libretranslate',
+        transient: res.status >= 500 || res.status === 429,
+      };
     }
     const json = (await res.json()) as { translatedText?: string };
     if (!json.translatedText) {
@@ -146,18 +179,147 @@ async function callLibreTranslate(
       ok: false,
       error: err instanceof Error ? err.message : 'LibreTranslate error',
       provider: 'libretranslate',
+      transient: true,
     };
   }
 }
 
-/** Dispatch to the configured provider. */
-export async function callProvider(
+/**
+ * MyMemory free tier:
+ *  - 5 000 chars/day anonymous
+ *  - 50 000 chars/day with email (`de` query param)
+ *  - docs: https://mymemory.translated.net/doc/spec.php
+ *
+ * The endpoint returns a JSON envelope where `responseData.translatedText`
+ * is the best match. Quota-exhausted responses come back as HTTP 200 with a
+ * `responseStatus` of 429 or a textual message in `responseDetails` — we treat
+ * those as transient errors so chain mode falls through to the next provider.
+ */
+async function callMyMemory(
+  text: string,
+  source: string,
+  target: string,
+  email: string,
+): Promise<ProviderResult | ProviderError> {
+  const url = new URL('https://api.mymemory.translated.net/get');
+  url.searchParams.set('q', text);
+  url.searchParams.set('langpair', `${toTwoLetter(source)}|${toTwoLetter(target)}`);
+  if (email && email.includes('@')) {
+    url.searchParams.set('de', email);
+  }
+  try {
+    const res = await withTimeout(url, { method: 'GET' });
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: `MyMemory ${res.status}`,
+        provider: 'mymemory',
+        transient: res.status >= 500 || res.status === 429,
+      };
+    }
+    const json = (await res.json()) as {
+      responseStatus?: number | string;
+      responseDetails?: string;
+      responseData?: { translatedText?: string };
+    };
+    const status = Number(json.responseStatus ?? 0);
+    if (status && status >= 400) {
+      return {
+        ok: false,
+        error: `MyMemory ${status} ${json.responseDetails ?? ''}`.trim(),
+        provider: 'mymemory',
+        transient: status === 429 || status >= 500,
+      };
+    }
+    const translated = json.responseData?.translatedText?.trim();
+    if (!translated) {
+      return { ok: false, error: 'MyMemory empty response', provider: 'mymemory' };
+    }
+    // MyMemory occasionally echoes "MYMEMORY WARNING: YOU USED ALL AVAILABLE
+    // FREE TRANSLATIONS FOR TODAY" inside the translatedText field instead of
+    // a real translation. Detect and bubble that up as a transient error so
+    // chain mode falls through.
+    if (/MYMEMORY\s+WARNING/i.test(translated)) {
+      return {
+        ok: false,
+        error: translated,
+        provider: 'mymemory',
+        transient: true,
+      };
+    }
+    return { ok: true, translatedText: translated, provider: 'mymemory' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'MyMemory error',
+      provider: 'mymemory',
+      transient: true,
+    };
+  }
+}
+
+/**
+ * Lingva is an unauthenticated front-end / scraper for Google Translate.
+ * Reference: https://github.com/thedaviddelta/lingva-translate
+ *
+ * The API shape used here is `/api/v1/:SOURCE/:TARGET/:QUERY` which the
+ * thedaviddelta.com instance and most community mirrors expose. Source
+ * accepts 'auto' as a placeholder when the caller doesn't know the source.
+ */
+async function callLingva(
+  text: string,
+  source: string,
+  target: string,
+  baseUrl: string,
+): Promise<ProviderResult | ProviderError> {
+  const host = (baseUrl || 'https://lingva.thedaviddelta.com').replace(/\/+$/, '');
+  const src = toTwoLetter(source) || 'auto';
+  const tgt = toTwoLetter(target);
+  // encodeURIComponent on the whole query so question marks / emoji / slashes
+  // round-trip cleanly. Lingva's URL routing matches the last segment greedily
+  // so this is the safe encoding.
+  const url = `${host}/api/v1/${src}/${tgt}/${encodeURIComponent(text)}`;
+  try {
+    const res = await withTimeout(url, { method: 'GET' });
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: `Lingva ${res.status}`,
+        provider: 'lingva',
+        transient: res.status >= 500 || res.status === 429,
+      };
+    }
+    const json = (await res.json()) as { translation?: string };
+    const translated = json.translation?.trim();
+    if (!translated) {
+      return { ok: false, error: 'Lingva empty response', provider: 'lingva' };
+    }
+    return { ok: true, translatedText: translated, provider: 'lingva' };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Lingva error',
+      provider: 'lingva',
+      transient: true,
+    };
+  }
+}
+
+/**
+ * Dispatch to a single provider. Used both by `callProvider` (legacy single
+ * mode) and by `callChain` which walks an ordered list.
+ *
+ * `offline` is rejected here because the cache + dictionary lookup happens in
+ * `translate.ts` *before* we even consider hitting a provider.
+ */
+export async function callOne(
+  provider: TranslateProvider,
   text: string,
   source: string,
   target: string,
   settings: TranslateSettings,
 ): Promise<ProviderResult | ProviderError> {
-  switch (settings.provider) {
+  switch (provider) {
     case 'deepl':
       return callDeepL(text, source, target, settings.deeplToken);
     case 'google':
@@ -170,8 +332,79 @@ export async function callProvider(
         settings.libreTranslateUrl,
         settings.libreTranslateToken,
       );
+    case 'mymemory':
+      return callMyMemory(text, source, target, settings.myMemoryEmail);
+    case 'lingva':
+      return callLingva(text, source, target, settings.lingvaUrl);
     case 'offline':
     default:
-      return { ok: false, error: 'offline provider', provider: 'offline' };
+      return { ok: false, error: 'offline provider has no network call', provider: 'offline' };
   }
+}
+
+/**
+ * Legacy single-provider dispatch retained so any caller that hasn't migrated
+ * to chain mode keeps working.
+ */
+export async function callProvider(
+  text: string,
+  source: string,
+  target: string,
+  settings: TranslateSettings,
+): Promise<ProviderResult | ProviderError> {
+  return callOne(settings.provider, text, source, target, settings);
+}
+
+export interface ChainStep {
+  provider: TranslateProvider;
+  error: string;
+  transient?: boolean;
+}
+
+export interface ChainResult {
+  ok: true;
+  translatedText: string;
+  provider: TranslateProvider;
+  attempted: ChainStep[];
+}
+
+export interface ChainError {
+  ok: false;
+  attempted: ChainStep[];
+  /** The user-visible error \u2014 always the last failure in the chain. */
+  error: string;
+}
+
+/**
+ * Walk an ordered list of providers, returning the first successful result.
+ * Providers that fail with a credential-missing error are silently skipped
+ * (no point telling the user "no DeepL key" when they haven't even tried to
+ * configure one).
+ */
+export async function callChain(
+  providers: TranslateProvider[],
+  text: string,
+  source: string,
+  target: string,
+  settings: TranslateSettings,
+): Promise<ChainResult | ChainError> {
+  const attempted: ChainStep[] = [];
+  for (const provider of providers) {
+    if (provider === 'offline') continue;
+    const result = await callOne(provider, text, source, target, settings);
+    if (result.ok) {
+      attempted.push({ provider, error: 'ok' });
+      return { ok: true, translatedText: result.translatedText, provider, attempted };
+    }
+    attempted.push({
+      provider: result.provider,
+      error: result.error,
+      transient: result.transient,
+    });
+  }
+  return {
+    ok: false,
+    attempted,
+    error: attempted[attempted.length - 1]?.error ?? 'no provider succeeded',
+  };
 }
