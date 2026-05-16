@@ -29,7 +29,14 @@
     "https://api-free.deepl.com/*",
     "https://translation.googleapis.com/*",
     "https://libretranslate.com/*",
-    "https://*.libretranslate.com/*"
+    "https://*.libretranslate.com/*",
+    "https://api.mymemory.translated.net/*",
+    "https://lingva.thedaviddelta.com/*",
+    "https://*.lingva.ml/*",
+    "https://lingva.pussthecat.org/*",
+    "https://translate.plausibility.cloud/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.ts",

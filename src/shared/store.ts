@@ -47,12 +47,29 @@ export const DEFAULT_CLEANUP: CleanupSettings = {
 };
 
 export const DEFAULT_TRANSLATE: TranslateSettings = {
+  // Chain mode by default — offline first, then free providers, then any
+  // configured premium API. Single mode is still selectable in Settings for
+  // users who want exact control over which API gets hit.
+  mode: 'chain',
   provider: 'offline',
+  tiersEnabled: { free: true, premium: true },
+  // MyMemory first because for short tokens (most subtitle hovers) its corpus
+  // returns better quality than the unauthenticated Google scrape that Lingva
+  // performs.
+  freeChain: ['mymemory', 'lingva'],
+  // Premium chain skips any provider that lacks credentials at call time.
+  premiumChain: ['deepl', 'google', 'libretranslate'],
   targetLanguage: 'es',
   deeplToken: '',
   googleToken: '',
   libreTranslateUrl: 'https://libretranslate.com',
   libreTranslateToken: '',
+  myMemoryEmail: '',
+  // The original lingva.ml host went down in 2024; thedaviddelta runs a
+  // long-lived Vercel deployment at this domain. Users can point at their own
+  // self-hosted instance or any of the mirrors listed at
+  // https://github.com/thedaviddelta/lingva-translate#instances .
+  lingvaUrl: 'https://lingva.thedaviddelta.com',
   cacheTtlDays: 30,
 };
 
