@@ -25,6 +25,7 @@ export const DEFAULT_SUBTITLE_STYLES: SubtitleStyles = {
 
 export const DEFAULT_ANKI_MAPPING: AnkiMapping = {
   ankiUrl: 'http://127.0.0.1:8765',
+  apiKey: '',
   deckName: 'Vocabulario Inglés',
   modelName: 'Basic',
   fieldSources: {},

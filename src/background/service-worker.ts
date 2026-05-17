@@ -44,6 +44,79 @@ console.log('[Kivara Lingo] service worker booting');
 const STORE_KEY = 'kivara-lingo-state';
 const RETRY_ALARM = 'kivara-lingo-retry-pending';
 
+/**
+ * AnkiConnect's default `webCorsOriginList` is `["http://localhost"]`.
+ * MV3 service-worker fetches send `Origin: chrome-extension://<id>` which
+ * AnkiConnect rejects — so we rewrite the header to `http://localhost`
+ * for every request to the AnkiConnect endpoint. This is the same trick
+ * Yomitan / Migaku Toolbar use to avoid asking the user to edit their
+ * AnkiConnect config by hand.
+ */
+const ANKI_DNR_RULE_ID = 9981;
+async function installAnkiOriginRule(): Promise<void> {
+  if (!chrome.declarativeNetRequest?.updateSessionRules) return;
+  try {
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [ANKI_DNR_RULE_ID],
+      addRules: [
+        {
+          id: ANKI_DNR_RULE_ID,
+          priority: 1,
+          action: {
+            type: 'modifyHeaders' as chrome.declarativeNetRequest.RuleActionType,
+            requestHeaders: [
+              {
+                header: 'Origin',
+                operation: 'set' as chrome.declarativeNetRequest.HeaderOperation,
+                value: 'http://localhost',
+              },
+            ],
+          },
+          condition: {
+            urlFilter: '|http*://127.0.0.1:8765/*',
+            resourceTypes: [
+              'xmlhttprequest' as chrome.declarativeNetRequest.ResourceType,
+            ],
+          },
+        },
+        {
+          id: ANKI_DNR_RULE_ID + 1,
+          priority: 1,
+          action: {
+            type: 'modifyHeaders' as chrome.declarativeNetRequest.RuleActionType,
+            requestHeaders: [
+              {
+                header: 'Origin',
+                operation: 'set' as chrome.declarativeNetRequest.HeaderOperation,
+                value: 'http://localhost',
+              },
+            ],
+          },
+          condition: {
+            urlFilter: '|http*://localhost:8765/*',
+            resourceTypes: [
+              'xmlhttprequest' as chrome.declarativeNetRequest.ResourceType,
+            ],
+          },
+        },
+      ],
+    });
+    console.log('[Kivara Lingo] AnkiConnect Origin rewrite rule installed');
+  } catch (err) {
+    console.warn('[Kivara Lingo] could not install AnkiConnect DNR rule', err);
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  void installAnkiOriginRule();
+});
+chrome.runtime.onStartup.addListener(() => {
+  void installAnkiOriginRule();
+});
+// First boot of the SW after a module reload — onStartup doesn't fire on
+// unpacked extensions, so install immediately too.
+void installAnkiOriginRule();
+
 async function loadMapping(): Promise<AnkiMapping> {
   try {
     const raw = await chrome.storage.sync.get(STORE_KEY);
@@ -98,21 +171,39 @@ onMessage('CREATE_CARD', async ({ data }) => {
   return asJson(response);
 });
 
+/**
+ * Resolve the URL + API key for an AnkiConnect request. Callers can
+ * override either by passing them explicitly in the message payload
+ * (popup / CardsTab "Probar" button); when omitted we read the saved
+ * mapping from chrome.storage.sync so background-triggered actions
+ * (CREATE_CARD, retry alarm) honour the user's saved settings.
+ */
+async function resolveAnkiAuth(
+  data: unknown,
+): Promise<{ url?: string; apiKey?: string }> {
+  const payload = (data as { url?: string; apiKey?: string } | undefined) ?? {};
+  if (payload.url || payload.apiKey != null) {
+    return { url: payload.url, apiKey: payload.apiKey };
+  }
+  const mapping = await loadMapping();
+  return { url: mapping.ankiUrl, apiKey: mapping.apiKey };
+}
+
 onMessage('ANKI_PING', async ({ data }) => {
-  const url = (data as { url?: string } | undefined)?.url;
-  const result = await ankiConnect.ping(url);
+  const { url, apiKey } = await resolveAnkiAuth(data);
+  const result = await ankiConnect.ping(url, apiKey);
   const out: AnkiPingResponse = result.ok
     ? { ok: true, version: result.version }
-    : { ok: false, error: result.error };
+    : { ok: false, error: result.error, code: result.code };
   return asJson(out);
 });
 
 onMessage('ANKI_DECKS', async ({ data }) => {
-  const url = (data as { url?: string } | undefined)?.url;
+  const { url, apiKey } = await resolveAnkiAuth(data);
   try {
     const [decks, models] = await Promise.all([
-      ankiConnect.deckNames(url),
-      ankiConnect.modelNames(url),
+      ankiConnect.deckNames(url, apiKey),
+      ankiConnect.modelNames(url, apiKey),
     ]);
     const out: AnkiListsResponse = { decks, models };
     return asJson(out);
@@ -123,9 +214,9 @@ onMessage('ANKI_DECKS', async ({ data }) => {
 });
 
 onMessage('ANKI_MODELS', async ({ data }) => {
-  const url = (data as { url?: string } | undefined)?.url;
+  const { url, apiKey } = await resolveAnkiAuth(data);
   try {
-    const models = await ankiConnect.modelNames(url);
+    const models = await ankiConnect.modelNames(url, apiKey);
     return asJson({ decks: [], models } satisfies AnkiListsResponse);
   } catch (err) {
     console.warn('[Kivara Lingo] ANKI_MODELS failed', err);
@@ -134,10 +225,11 @@ onMessage('ANKI_MODELS', async ({ data }) => {
 });
 
 onMessage('ANKI_FIELDS', async ({ data }) => {
-  const { url, modelName } = (data as { url?: string; modelName?: string }) ?? {};
+  const { url, apiKey } = await resolveAnkiAuth(data);
+  const modelName = (data as { modelName?: string } | undefined)?.modelName;
   if (!modelName) return asJson({ fields: [] } satisfies AnkiFieldsResponse);
   try {
-    const fields = await ankiConnect.modelFieldNames(modelName, url);
+    const fields = await ankiConnect.modelFieldNames(modelName, url, apiKey);
     const out: AnkiFieldsResponse = { fields };
     return asJson(out);
   } catch (err) {
@@ -147,10 +239,11 @@ onMessage('ANKI_FIELDS', async ({ data }) => {
 });
 
 onMessage('ANKI_CREATE_DECK', async ({ data }) => {
-  const { url, deckName } = (data as { url?: string; deckName: string }) ?? {};
+  const { url, apiKey } = await resolveAnkiAuth(data);
+  const deckName = (data as { deckName?: string } | undefined)?.deckName;
   if (!deckName) return asJson({ ok: false, error: 'deckName missing' });
   try {
-    await ankiConnect.createDeck(deckName, url);
+    await ankiConnect.createDeck(deckName, url, apiKey);
     return asJson({ ok: true });
   } catch (err) {
     const reason = err instanceof Error ? err.message : 'failed';

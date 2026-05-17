@@ -188,7 +188,12 @@ export async function createCardFromRequest(
     if (frameField) {
       const filename = safeFilename(request.token, 'jpg');
       try {
-        await ankiConnect.storeMediaFile(filename, dataUrlToBase64(request.frame), mapping.ankiUrl);
+        await ankiConnect.storeMediaFile(
+          filename,
+          dataUrlToBase64(request.frame),
+          mapping.ankiUrl,
+          mapping.apiKey,
+        );
         pictures.push({ filename, data: dataUrlToBase64(request.frame), fields: [frameField] });
       } catch (err) {
         const reason = err instanceof Error ? err.message : 'frame';
@@ -213,6 +218,7 @@ export async function createCardFromRequest(
           filename,
           dataUrlToBase64(resolved.dataUrl),
           mapping.ankiUrl,
+          mapping.apiKey,
         );
         audios.push({
           filename,
@@ -240,7 +246,7 @@ export async function createCardFromRequest(
         if (tts.ok) {
           const filename = safeFilename(request.token, extForMime(tts.mime));
           const data = dataUrlToBase64(tts.dataUrl);
-          await ankiConnect.storeMediaFile(filename, data, mapping.ankiUrl);
+          await ankiConnect.storeMediaFile(filename, data, mapping.ankiUrl, mapping.apiKey);
           audios.push({ filename, data, fields: [ttsField] });
         }
       } catch (err) {
@@ -262,6 +268,7 @@ export async function createCardFromRequest(
         options: { allowDuplicate: false },
       },
       mapping.ankiUrl,
+      mapping.apiKey,
     );
     // Record success in dedup ledger.
     try {
