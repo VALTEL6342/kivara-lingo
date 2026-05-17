@@ -71,6 +71,12 @@ export interface TtsResponse {
 
 export interface AnkiMapping {
   ankiUrl: string;
+  /**
+   * Optional AnkiConnect API key. Recent AnkiConnect versions allow
+   * protecting the endpoint with a shared secret; when set we send it
+   * with every request as `params.key`.
+   */
+  apiKey?: string;
   deckName: string;
   modelName: string;
   /** key = exact Anki field name, value = source */
@@ -415,10 +421,14 @@ export interface CreateCardResponse {
   warnings?: string[];
 }
 
+export type AnkiPingErrorCode = 'NETWORK' | 'CORS' | 'TIMEOUT' | 'HTTP' | 'ANKI' | 'API_KEY';
+
 export interface AnkiPingResponse {
   ok: boolean;
   version?: number;
   error?: string;
+  /** Machine-readable error class so the UI can show a tailored hint. */
+  code?: AnkiPingErrorCode;
 }
 
 export interface AnkiListsResponse {

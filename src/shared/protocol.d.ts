@@ -23,11 +23,11 @@ import type {
 declare module 'webext-bridge' {
   export interface ProtocolMap {
     CREATE_CARD: ProtocolWithReturn<CreateCardRequest, CreateCardResponse>;
-    ANKI_PING: ProtocolWithReturn<{ url?: string }, AnkiPingResponse>;
-    ANKI_DECKS: ProtocolWithReturn<{ url?: string }, AnkiListsResponse>;
-    ANKI_MODELS: ProtocolWithReturn<{ url?: string }, AnkiListsResponse>;
-    ANKI_FIELDS: ProtocolWithReturn<{ url?: string; modelName: string }, AnkiFieldsResponse>;
-    ANKI_CREATE_DECK: ProtocolWithReturn<{ url?: string; deckName: string }, { ok: boolean; error?: string }>;
+    ANKI_PING: ProtocolWithReturn<{ url?: string; apiKey?: string }, AnkiPingResponse>;
+    ANKI_DECKS: ProtocolWithReturn<{ url?: string; apiKey?: string }, AnkiListsResponse>;
+    ANKI_MODELS: ProtocolWithReturn<{ url?: string; apiKey?: string }, AnkiListsResponse>;
+    ANKI_FIELDS: ProtocolWithReturn<{ url?: string; apiKey?: string; modelName: string }, AnkiFieldsResponse>;
+    ANKI_CREATE_DECK: ProtocolWithReturn<{ url?: string; apiKey?: string; deckName: string }, { ok: boolean; error?: string }>;
     START_AUDIO_CAPTURE: ProtocolWithReturn<{ tabId?: number }, { ok: boolean; error?: string }>;
     STOP_AUDIO_CAPTURE: ProtocolWithReturn<Record<string, never>, { ok: boolean }>;
     AUDIO_CAPTURE_STATUS: ProtocolWithReturn<Record<string, never>, AudioCaptureStatus>;

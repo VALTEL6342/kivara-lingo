@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { sendMessage } from 'webext-bridge/popup';
 import { Power, ExternalLink, MicIcon, MicOffIcon, Settings } from 'lucide-react';
 import { useKivaraStore } from '../shared/store';
 import { KivaraLingoLogo } from '../app/components/KivaraLingoLogo';
-import type { AnkiPingResponse } from '../shared/types';
+import type { AnkiPingErrorCode, AnkiPingResponse } from '../shared/types';
 
 interface PingState {
   status: 'idle' | 'pinging' | 'ok' | 'error';
   version?: number;
   error?: string;
+  code?: AnkiPingErrorCode;
 }
 
 export function Popup() {
@@ -24,31 +25,69 @@ export function Popup() {
   } = useKivaraStore();
 
   const [ping, setPing] = useState<PingState>({ status: 'idle' });
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDarkMode);
   }, [isDarkMode]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      setPing({ status: 'pinging' });
-      try {
-        const result = (await sendMessage('ANKI_PING', { url: ankiMapping.ankiUrl }, 'background')) as AnkiPingResponse;
-        if (cancelled) return;
-        if (result.ok) setPing({ status: 'ok', version: result.version });
-        else setPing({ status: 'error', error: result.error });
-      } catch (err) {
-        if (cancelled) return;
-        const reason = err instanceof Error ? err.message : 'unknown';
-        setPing({ status: 'error', error: reason });
-      }
+  /**
+   * Single source of truth for pinging AnkiConnect. Wrapped in `useCallback`
+   * so the auto-poll effect and the "Reintentar" button both call exactly
+   * the same code path.
+   */
+  const runPing = useCallback(async () => {
+    setPing({ status: 'pinging' });
+    try {
+      const result = (await sendMessage(
+        'ANKI_PING',
+        { url: ankiMapping.ankiUrl, apiKey: ankiMapping.apiKey },
+        'background',
+      )) as AnkiPingResponse;
+      if (cancelledRef.current) return;
+      if (result.ok) setPing({ status: 'ok', version: result.version });
+      else setPing({ status: 'error', error: result.error, code: result.code });
+    } catch (err) {
+      if (cancelledRef.current) return;
+      const reason = err instanceof Error ? err.message : 'unknown';
+      setPing({ status: 'error', error: reason });
     }
-    void run();
+  }, [ankiMapping.ankiUrl, ankiMapping.apiKey]);
+
+  // Ping on mount / when the AnkiConnect URL or API key changes.
+  useEffect(() => {
+    cancelledRef.current = false;
+    void runPing();
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
     };
-  }, [ankiMapping.ankiUrl]);
+  }, [runPing]);
+
+  // Auto-retry every 4s while we are in an error state. This is what the
+  // user actually wants: open the popup, open Anki, and watch the dot
+  // turn green within a few seconds — without having to remember to
+  // press "Reintentar".
+  useEffect(() => {
+    if (ping.status !== 'error') return;
+    const interval = window.setInterval(() => {
+      void runPing();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [ping.status, runPing]);
+
+  // Re-ping the instant the popup regains focus — e.g. the user just
+  // alt-tabbed to start Anki and came back.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void runPing();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onVis);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onVis);
+    };
+  }, [runPing]);
 
   async function openPanelOnActiveTab() {
     setPanelOpen(true);
@@ -134,15 +173,20 @@ export function Popup() {
               <span className="text-[12px]">{statusLabel}</span>
             </div>
             <button
-              onClick={() => setPing({ status: 'idle' })}
-              className="text-[10px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              onClick={() => void runPing()}
+              disabled={ping.status === 'pinging'}
+              className="text-[10px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 disabled:opacity-50"
             >
               Reintentar
             </button>
           </div>
           {ping.status === 'error' && (
-            <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">
-              Abre Anki y verifica que el complemento AnkiConnect esté instalado.
+            <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1 leading-snug">
+              {ping.code === 'API_KEY'
+                ? 'Tu AnkiConnect requiere API key — configúrala en la tab Cards → Conexión.'
+                : ping.code === 'TIMEOUT'
+                  ? 'AnkiConnect tardó demasiado. Verifica que Anki esté respondiendo.'
+                  : 'Abre Anki y verifica que el complemento AnkiConnect esté instalado. Los subtítulos y la traducción siguen funcionando sin conexión — solo "Guardar" requiere Anki.'}
             </p>
           )}
         </section>
