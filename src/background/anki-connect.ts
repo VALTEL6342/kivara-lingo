@@ -4,34 +4,98 @@ const DEFAULT_URL = 'http://127.0.0.1:8765';
 const DEFAULT_VERSION = 6;
 const DEFAULT_TIMEOUT_MS = 4000;
 
+export type AnkiErrorCode = 'NETWORK' | 'CORS' | 'TIMEOUT' | 'HTTP' | 'ANKI' | 'API_KEY';
+
 export class AnkiConnectError extends Error {
-  constructor(message: string, public readonly code?: string) {
+  constructor(message: string, public readonly code?: AnkiErrorCode) {
     super(message);
     this.name = 'AnkiConnectError';
   }
 }
 
-async function invoke<T = unknown>(
+/**
+ * Normalize the user-entered URL. AnkiConnect listens on
+ * `http://127.0.0.1:8765` by default; we accept several common shapes
+ * (`localhost`, missing port, missing scheme, trailing slash) so that
+ * the user never sees "sin conexión" because of a tiny typo.
+ */
+function normalizeUrl(raw?: string): string {
+  let url = (raw ?? '').trim();
+  if (!url) return DEFAULT_URL;
+  if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+  // Strip trailing slash so fetch() doesn't 404 on the root handler.
+  url = url.replace(/\/+$/, '');
+  // Add the default port when missing on a localhost-style URL.
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(url)) {
+    if (!/:\d+$/.test(url)) url = url + ':8765';
+  }
+  return url;
+}
+
+/**
+ * Pair (127.0.0.1, localhost). When the user-entered URL only covers
+ * one we'll automatically try the other on a network failure — useful
+ * when AnkiConnect binds only to `localhost` (or vice versa).
+ */
+function fallbackUrls(url: string): string[] {
+  const out = [url];
+  if (url.includes('127.0.0.1')) {
+    out.push(url.replace('127.0.0.1', 'localhost'));
+  } else if (url.includes('localhost')) {
+    out.push(url.replace('localhost', '127.0.0.1'));
+  }
+  return out;
+}
+
+interface InvokeOptions {
+  url?: string;
+  apiKey?: string;
+  timeoutMs?: number;
+}
+
+async function invokeOnce<T = unknown>(
   action: string,
-  params: Record<string, unknown> = {},
-  url: string = DEFAULT_URL,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  params: Record<string, unknown>,
+  url: string,
+  apiKey: string | undefined,
+  timeoutMs: number,
 ): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  const body = JSON.stringify({
+    action,
+    version: DEFAULT_VERSION,
+    params,
+    ...(apiKey ? { key: apiKey } : {}),
+  });
 
   let response: Response;
   try {
     response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, version: DEFAULT_VERSION, params }),
+      body,
       signal: controller.signal,
     });
   } catch (err: unknown) {
     clearTimeout(timeout);
     const reason = err instanceof Error ? err.message : String(err);
-    throw new AnkiConnectError(`No se pudo contactar AnkiConnect (${reason}). ¿Está Anki abierto?`, 'NETWORK');
+    const aborted = err instanceof DOMException && err.name === 'AbortError';
+    if (aborted) {
+      throw new AnkiConnectError(
+        `AnkiConnect tardó más de ${timeoutMs}ms en responder.`,
+        'TIMEOUT',
+      );
+    }
+    // Distinguish CORS-style failures from outright "host unreachable".
+    // Chrome reports both as "Failed to fetch" — the most actionable
+    // tip is the same in both cases (open Anki, install AnkiConnect,
+    // check the URL).
+    throw new AnkiConnectError(
+      `No se pudo contactar AnkiConnect (${reason}). ¿Está Anki abierto y AnkiConnect instalado?`,
+      'NETWORK',
+    );
   } finally {
     clearTimeout(timeout);
   }
@@ -41,8 +105,47 @@ async function invoke<T = unknown>(
   }
 
   const json = (await response.json()) as { result: T; error: string | null };
-  if (json.error) throw new AnkiConnectError(json.error, 'ANKI');
+  if (json.error) {
+    const msg = json.error;
+    if (/api ?key|valid key/i.test(msg)) {
+      throw new AnkiConnectError(
+        'AnkiConnect requiere una API key. Configúrala en la tab Cards → Conexión.',
+        'API_KEY',
+      );
+    }
+    throw new AnkiConnectError(msg, 'ANKI');
+  }
   return json.result;
+}
+
+async function invoke<T = unknown>(
+  action: string,
+  params: Record<string, unknown> = {},
+  opts: InvokeOptions = {},
+): Promise<T> {
+  const primary = normalizeUrl(opts.url);
+  const urls = fallbackUrls(primary);
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  let lastErr: unknown = null;
+  for (const url of urls) {
+    try {
+      return await invokeOnce<T>(action, params, url, opts.apiKey, timeoutMs);
+    } catch (err) {
+      lastErr = err;
+      // Only retry on transport-level failures — don't retry on Anki
+      // protocol errors (HTTP 500 / wrong API key / duplicate note).
+      if (
+        err instanceof AnkiConnectError &&
+        (err.code === 'HTTP' || err.code === 'ANKI' || err.code === 'API_KEY')
+      ) {
+        throw err;
+      }
+    }
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new AnkiConnectError('Error desconocido contactando AnkiConnect.', 'NETWORK');
 }
 
 export interface AnkiNote {
@@ -69,39 +172,49 @@ export interface AnkiMedia {
   fields: string[];
 }
 
+export interface AnkiPingOk { ok: true; version: number; }
+export interface AnkiPingErr { ok: false; error: string; code?: AnkiErrorCode; }
+export type AnkiPingResult = AnkiPingOk | AnkiPingErr;
+
 export const ankiConnect = {
-  async ping(url?: string): Promise<{ ok: true; version: number } | { ok: false; error: string }> {
+  async ping(url?: string, apiKey?: string): Promise<AnkiPingResult> {
     try {
-      const version = await invoke<number>('version', {}, url ?? DEFAULT_URL, 2000);
+      const version = await invoke<number>('version', {}, { url, apiKey, timeoutMs: 2000 });
       return { ok: true, version };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
-      return { ok: false, error: message };
+      const code = err instanceof AnkiConnectError ? err.code : undefined;
+      return { ok: false, error: message, code };
     }
   },
 
-  async deckNames(url?: string): Promise<string[]> {
-    return invoke<string[]>('deckNames', {}, url ?? DEFAULT_URL);
+  async deckNames(url?: string, apiKey?: string): Promise<string[]> {
+    return invoke<string[]>('deckNames', {}, { url, apiKey });
   },
 
-  async modelNames(url?: string): Promise<string[]> {
-    return invoke<string[]>('modelNames', {}, url ?? DEFAULT_URL);
+  async modelNames(url?: string, apiKey?: string): Promise<string[]> {
+    return invoke<string[]>('modelNames', {}, { url, apiKey });
   },
 
-  async modelFieldNames(modelName: string, url?: string): Promise<string[]> {
-    return invoke<string[]>('modelFieldNames', { modelName }, url ?? DEFAULT_URL);
+  async modelFieldNames(modelName: string, url?: string, apiKey?: string): Promise<string[]> {
+    return invoke<string[]>('modelFieldNames', { modelName }, { url, apiKey });
   },
 
-  async addNote(note: AnkiNote, url?: string): Promise<number> {
-    return invoke<number>('addNote', { note }, url ?? DEFAULT_URL);
+  async addNote(note: AnkiNote, url?: string, apiKey?: string): Promise<number> {
+    return invoke<number>('addNote', { note }, { url, apiKey });
   },
 
-  async storeMediaFile(filename: string, dataBase64: string, url?: string): Promise<string> {
-    return invoke<string>('storeMediaFile', { filename, data: dataBase64 }, url ?? DEFAULT_URL);
+  async storeMediaFile(
+    filename: string,
+    dataBase64: string,
+    url?: string,
+    apiKey?: string,
+  ): Promise<string> {
+    return invoke<string>('storeMediaFile', { filename, data: dataBase64 }, { url, apiKey });
   },
 
-  async createDeck(deck: string, url?: string): Promise<number> {
-    return invoke<number>('createDeck', { deck }, url ?? DEFAULT_URL);
+  async createDeck(deck: string, url?: string, apiKey?: string): Promise<number> {
+    return invoke<number>('createDeck', { deck }, { url, apiKey });
   },
 };
 

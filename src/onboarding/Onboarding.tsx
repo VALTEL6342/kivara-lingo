@@ -71,11 +71,12 @@ export function Onboarding() {
   }, [isDarkMode]);
 
   const url = ankiMapping.ankiUrl;
+  const apiKey = ankiMapping.apiKey;
 
   async function runPing() {
     setPing({ status: 'pinging' });
     try {
-      const r = (await sendMessage('ANKI_PING', { url }, 'background')) as AnkiPingResponse;
+      const r = (await sendMessage('ANKI_PING', { url, apiKey }, 'background')) as AnkiPingResponse;
       if (r.ok) {
         setPing({ status: 'ok', version: r.version });
         // Eagerly fetch decks + models so the next step is ready when the
@@ -92,7 +93,7 @@ export function Onboarding() {
   async function loadDecksAndModels() {
     setBusy(true);
     try {
-      const r = (await sendMessage('ANKI_DECKS', { url }, 'background')) as AnkiListsResponse;
+      const r = (await sendMessage('ANKI_DECKS', { url, apiKey }, 'background')) as AnkiListsResponse;
       if (r.decks) setDecks(r.decks);
       if (r.models) setModels(r.models);
     } finally {
@@ -103,7 +104,7 @@ export function Onboarding() {
   async function loadFields(modelName: string) {
     setBusy(true);
     try {
-      const r = (await sendMessage('ANKI_FIELDS', { url, modelName }, 'background')) as AnkiFieldsResponse;
+      const r = (await sendMessage('ANKI_FIELDS', { url, apiKey, modelName }, 'background')) as AnkiFieldsResponse;
       if (r.fields?.length) {
         setFields(r.fields);
         // Only auto-fill mapping slots the user hasn't already configured —

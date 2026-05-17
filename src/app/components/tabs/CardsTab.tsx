@@ -92,14 +92,22 @@ export function CardsTab({ mapping, setMapping, mockData }: CardsTabProps) {
   async function refreshAnki() {
     setConn('connecting');
     try {
-      const ping = (await sendMessage('ANKI_PING', { url: mapping.ankiUrl }, 'background')) as AnkiPingResponse;
+      const ping = (await sendMessage(
+        'ANKI_PING',
+        { url: mapping.ankiUrl, apiKey: mapping.apiKey },
+        'background',
+      )) as AnkiPingResponse;
       if (!ping?.ok) {
         setConn('error');
         setDecks([]);
         setModels([]);
         return;
       }
-      const lists = (await sendMessage('ANKI_DECKS', { url: mapping.ankiUrl }, 'background')) as AnkiListsResponse;
+      const lists = (await sendMessage(
+        'ANKI_DECKS',
+        { url: mapping.ankiUrl, apiKey: mapping.apiKey },
+        'background',
+      )) as AnkiListsResponse;
       setDecks(lists.decks ?? []);
       setModels(lists.models ?? []);
       if (lists.models?.length) {
@@ -107,7 +115,7 @@ export function CardsTab({ mapping, setMapping, mockData }: CardsTabProps) {
           lists.models.map(async (m) => {
             const res = (await sendMessage(
               'ANKI_FIELDS',
-              { url: mapping.ankiUrl, modelName: m },
+              { url: mapping.ankiUrl, apiKey: mapping.apiKey, modelName: m },
               'background',
             )) as AnkiFieldsResponse;
             setFieldsByModel((prev) => ({ ...prev, [m]: res.fields ?? [] }));
@@ -124,6 +132,17 @@ export function CardsTab({ mapping, setMapping, mockData }: CardsTabProps) {
     void refreshAnki();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-retry every 5s while we're disconnected so the UI recovers as
+  // soon as the user opens Anki — no need to switch tabs to hit "Probar".
+  useEffect(() => {
+    if (conn !== 'error') return;
+    const interval = window.setInterval(() => {
+      void refreshAnki();
+    }, 5000);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conn, mapping.ankiUrl, mapping.apiKey]);
 
   useEffect(() => {
     if (conn !== 'connected' || ankiFields.length === 0) return;
@@ -194,6 +213,16 @@ export function CardsTab({ mapping, setMapping, mockData }: CardsTabProps) {
                 Probar
               </button>
             </div>
+          </Row>
+
+          <Row label={<span className="flex items-center gap-1"><Plug size={10} className="text-zinc-400" />API key</span>}>
+            <input
+              type="password"
+              value={mapping.apiKey ?? ''}
+              onChange={(e) => setMapping({ ...mapping, apiKey: e.target.value })}
+              className="sl-input sl-mono w-full"
+              placeholder="Solo si AnkiConnect tiene apiKey (opcional)"
+            />
           </Row>
 
           <Row label={<span className="flex items-center gap-1"><Database size={10} className="text-zinc-400" />Mazo</span>}>
