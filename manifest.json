@@ -38,7 +38,12 @@
     "https://lingva.pussthecat.org/*",
     "https://translate.plausibility.cloud/*",
     "http://localhost/*",
-    "http://127.0.0.1/*"
+    "http://127.0.0.1/*",
+    "https://*.r2.dev/*",
+    "https://*.github.io/*",
+    "https://raw.githubusercontent.com/*",
+    "https://github.com/*",
+    "https://codeload.github.com/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.ts",

@@ -189,6 +189,71 @@ export async function importYomitanPack(
   return { ok: true, pack, termsImported: termRows.length };
 }
 
+/**
+ * Convenience wrapper that fetches a pack ZIP from `url` and imports it.
+ *
+ * The fetch is delegated to the background service worker (which has the
+ * extension's host permissions) when `chrome.runtime.sendMessage` is
+ * available — that keeps Cloudflare R2 / GitHub Pages / generic CORS-allowed
+ * hosts working from any side-panel context, regardless of the page origin.
+ * In non-extension contexts (e.g. vitest, the side-by-side prototype) we
+ * fall back to a direct `fetch()`.
+ */
+export async function importYomitanPackFromUrl(
+  url: string,
+): Promise<ImportResult | ImportError> {
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await fetchPackBytes(url);
+  } catch (err) {
+    return { ok: false, error: `Could not download pack: ${(err as Error).message}` };
+  }
+  return importYomitanPack(bytes);
+}
+
+/**
+ * Fetch raw bytes for a dictionary pack. Tries the SW proxy first; on any
+ * failure (no extension context, SW unreachable, host-permission denied)
+ * falls through to a direct `fetch()`.
+ */
+async function fetchPackBytes(url: string): Promise<ArrayBuffer> {
+  const swProxy =
+    typeof chrome !== 'undefined' && chrome.runtime?.id && chrome.runtime.sendMessage;
+  if (swProxy) {
+    try {
+      const reply: unknown = await chrome.runtime.sendMessage({
+        type: 'FETCH_PACK_URL',
+        url,
+      });
+      if (
+        reply &&
+        typeof reply === 'object' &&
+        (reply as { ok?: boolean }).ok &&
+        Array.isArray((reply as { bytes?: number[] }).bytes)
+      ) {
+        return new Uint8Array((reply as { bytes: number[] }).bytes).buffer;
+      }
+      if (
+        reply &&
+        typeof reply === 'object' &&
+        !(reply as { ok?: boolean }).ok &&
+        typeof (reply as { error?: string }).error === 'string'
+      ) {
+        throw new Error((reply as { error: string }).error);
+      }
+    } catch (err) {
+      // Fall through to direct fetch below — useful for tests and surfaces
+      // where the SW handler isn't registered.
+      console.warn('[Kivara Lingo] SW pack fetch failed; trying direct fetch', err);
+    }
+  }
+  const res = await fetch(url, { redirect: 'follow' });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  }
+  return res.arrayBuffer();
+}
+
 /** Delete a pack and all of its term rows. */
 export async function deleteYomitanPack(id: string): Promise<void> {
   const db = getDB();
