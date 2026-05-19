@@ -3,24 +3,35 @@ import { getDictionary, lookupDictionary } from './dictionary';
 import { isLikelyProperNoun, lemmaCandidates } from './lemma';
 
 /**
- * The full token taxonomy after the Phase 2 audit.
+ * The full token taxonomy after the Tier 2 audit.
  *
- *  - mwe       : multi-word expression in the dictionary (idiom or phrasal).
- *  - known     : single word in the dictionary (incl. via lemma fallback).
- *  - unknown   : single word NOT in the dictionary and NOT a proper noun.
- *                Still rendered interactively — hover triggers a remote
- *                translation lookup. Save is allowed.
- *  - ignored   : auto-classified as a proper noun (or user opted to hide).
- *                Rendered as plain text with no affordance.
- *  - mastered  : the user has marked this token as fully learnt. Rendered with
- *                opacity so it stops competing for visual attention. Hover
- *                still works (compact popover).
- *  - punct     : whitespace / punctuation. Non-interactive.
+ *  - mwe              : multi-word expression in the dictionary (idiom or phrasal).
+ *  - known            : single word in the dictionary (incl. via lemma fallback).
+ *  - proper-noun-known: capitalized word that IS in the dictionary (e.g.
+ *                       "America", "Microsoft"). Rendered with a distinct
+ *                       affordance so it doesn't compete with regular vocab.
+ *  - unknown          : single word NOT in the dictionary and NOT a proper noun.
+ *                       Still rendered interactively — hover triggers a remote
+ *                       translation lookup. Save is allowed.
+ *  - ignored          : auto-classified as a proper noun NOT in the dictionary
+ *                       (or user opted to hide). Rendered as plain text with no
+ *                       affordance.
+ *  - mastered         : the user has marked this token as fully learnt.
+ *                       Rendered with opacity so it stops competing for visual
+ *                       attention. Hover still works (compact popover).
+ *  - punct            : whitespace / punctuation. Non-interactive.
  *
  * The three flag-style states from the spec (`isSaved`, `isHovered`,
  * `expanded`) are transverse and live on the Token object, not on `kind`.
  */
-export type TokenKind = 'mwe' | 'known' | 'unknown' | 'ignored' | 'mastered' | 'punct';
+export type TokenKind =
+  | 'mwe'
+  | 'known'
+  | 'proper-noun-known'
+  | 'unknown'
+  | 'ignored'
+  | 'mastered'
+  | 'punct';
 
 /**
  * Optional sub-classification for MWE tokens. Surfaced in the popover so the
@@ -78,7 +89,12 @@ export function tokenizeSentence(
    */
   mastered: Set<string> = new Set(),
 ): Token[] {
-  const raw = sentence.match(/[\w']+|[^\w\s]+|\s+/g) ?? [];
+  // Token regex. Compound words with internal hyphens (well-known, mother-in-law,
+  // self-aware) are kept as a single token so the dictionary lookup has a
+  // chance to hit. Apostrophe-internal words (don't, John's, won't) are also
+  // single tokens. Pure punctuation runs and whitespace runs are emitted as
+  // their own tokens.
+  const raw = sentence.match(/[\w']+(?:-[\w']+)*|[^\w\s-]+|-+|\s+/g) ?? [];
   const words: { text: string; idx: number }[] = [];
   raw.forEach((t, idx) => {
     if (/[\w']/.test(t)) words.push({ text: t, idx });
@@ -143,7 +159,13 @@ export function tokenizeSentence(
     } else if (mastered.has(resolvedKey) || mastered.has(literal)) {
       kind = 'mastered';
     } else if (isKnown) {
-      kind = 'known';
+      // Distinguish a capitalized known token (proper noun the dict recognises,
+      // e.g. "America", "Microsoft") from a regular vocabulary hit. This lets
+      // the renderer pick a subtler affordance so culturally-loaded words
+      // don't compete with verbs/nouns the learner is trying to study.
+      const cuePos: 'start' | 'middle' | 'end' =
+        i === 0 ? 'start' : i === words.length - 1 ? 'end' : 'middle';
+      kind = isLikelyProperNoun(w.text, cuePos) ? 'proper-noun-known' : 'known';
     } else {
       const cuePos: 'start' | 'middle' | 'end' =
         i === 0 ? 'start' : i === words.length - 1 ? 'end' : 'middle';

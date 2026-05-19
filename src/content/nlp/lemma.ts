@@ -95,7 +95,87 @@ export const IRREGULAR_LEMMAS: Record<string, string> = {
   chose: 'choose', chosen: 'choose', chooses: 'choose', choosing: 'choose',
   flew: 'fly', flown: 'fly', flies: 'fly', flying: 'fly',
   ate: 'eat', eaten: 'eat', eats: 'eat', eating: 'eat',
-  // irregular plurals
+  // Additional irregular verbs (expanded after Tier 2 audit). Coverage now
+  // includes most CEFR B1–C1 irregulars present in conversational English.
+  swam: 'swim', swum: 'swim', swims: 'swim', swimming: 'swim',
+  hung: 'hang', hangs: 'hang', hanging: 'hang',
+  lit: 'light', lights: 'light', lighting: 'light',
+  fled: 'flee', flees: 'flee', fleeing: 'flee',
+  sought: 'seek', seeks: 'seek', seeking: 'seek',
+  shook: 'shake', shaken: 'shake', shakes: 'shake', shaking: 'shake',
+  stuck: 'stick', sticks: 'stick', sticking: 'stick',
+  struck: 'strike', strikes: 'strike', striking: 'strike',
+  swept: 'sweep', sweeps: 'sweep', sweeping: 'sweep',
+  swung: 'swing', swings: 'swing', swinging: 'swing',
+  woke: 'wake', woken: 'wake', wakes: 'wake', waking: 'wake',
+  fed: 'feed', feeds: 'feed', feeding: 'feed',
+  hid: 'hide', hidden: 'hide', hides: 'hide', hiding: 'hide',
+  slept: 'sleep', sleeps: 'sleep', sleeping: 'sleep',
+  dug: 'dig', digs: 'dig', digging: 'dig',
+  lent: 'lend', lends: 'lend', lending: 'lend',
+  spread: 'spread', spreads: 'spread', spreading: 'spread',
+  swore: 'swear', sworn: 'swear', swears: 'swear', swearing: 'swear',
+  wound: 'wind', winds: 'wind', winding: 'wind',
+  tore: 'tear', torn: 'tear', tears: 'tear', tearing: 'tear',
+  bit: 'bite', bitten: 'bite', bites: 'bite', biting: 'bite',
+  bled: 'bleed', bleeds: 'bleed', bleeding: 'bleed',
+  blew: 'blow', blown: 'blow', blows: 'blow', blowing: 'blow',
+  burnt: 'burn', burns: 'burn', burning: 'burn',
+  burst: 'burst', bursts: 'burst', bursting: 'burst',
+  caught: 'catch', catches: 'catch', catching: 'catch',
+  clung: 'cling', clings: 'cling', clinging: 'cling',
+  crept: 'creep', creeps: 'creep', creeping: 'creep',
+  dealt: 'deal', deals: 'deal', dealing: 'deal',
+  // "dove" not mapped — most modern English uses "dived" and "dove" can be
+  // a noun (the bird). Let the -ed/-es/-ing rules resolve dived/dives/diving.
+  dived: 'dive', dives: 'dive', diving: 'dive',
+  drank: 'drink', drunk: 'drink', drinks: 'drink', drinking: 'drink',
+  dwelt: 'dwell', dwells: 'dwell', dwelling: 'dwell',
+  forbade: 'forbid', forbidden: 'forbid', forbids: 'forbid', forbidding: 'forbid',
+  forgot: 'forget', forgotten: 'forget', forgets: 'forget', forgetting: 'forget',
+  forgave: 'forgive', forgiven: 'forgive', forgives: 'forgive', forgiving: 'forgive',
+  froze: 'freeze', frozen: 'freeze', freezes: 'freeze', freezing: 'freeze',
+  ground: 'grind', grinds: 'grind', grinding: 'grind',
+  hit: 'hit', hits: 'hit', hitting: 'hit',
+  hurt: 'hurt', hurts: 'hurt', hurting: 'hurt',
+  knelt: 'kneel', kneels: 'kneel', kneeling: 'kneel',
+  knit: 'knit', knits: 'knit', knitting: 'knit',
+  laid: 'lay', lays: 'lay', laying: 'lay',
+  leapt: 'leap', leaps: 'leap', leaping: 'leap',
+  learnt: 'learn', learns: 'learn', learning: 'learn',
+  put: 'put', puts: 'put', putting: 'put',
+  quit: 'quit', quits: 'quit', quitting: 'quit',
+  rang: 'ring', rung: 'ring', rings: 'ring', ringing: 'ring',
+  rid: 'rid', rids: 'rid', ridding: 'rid',
+  rode: 'ride', ridden: 'ride', rides: 'ride', riding: 'ride',
+  sang: 'sing', sung: 'sing', sings: 'sing', singing: 'sing',
+  sank: 'sink', sunk: 'sink', sinks: 'sink', sinking: 'sink',
+  shed: 'shed', sheds: 'shed', shedding: 'shed',
+  shot: 'shoot', shoots: 'shoot', shooting: 'shoot',
+  shut: 'shut', shuts: 'shut', shutting: 'shut',
+  slid: 'slide', slides: 'slide', sliding: 'slide',
+  smelt: 'smell', smells: 'smell', smelling: 'smell',
+  sped: 'speed', speeds: 'speed', speeding: 'speed',
+  spelt: 'spell', spells: 'spell', spelling: 'spell',
+  spilt: 'spill', spills: 'spill', spilling: 'spill',
+  split: 'split', splits: 'split', splitting: 'split',
+  spoilt: 'spoil', spoils: 'spoil', spoiling: 'spoil',
+  sprang: 'spring', sprung: 'spring', springs: 'spring', springing: 'spring',
+  stole: 'steal', stolen: 'steal', steals: 'steal', stealing: 'steal',
+  stung: 'sting', stings: 'sting', stinging: 'sting',
+  stank: 'stink', stunk: 'stink', stinks: 'stink', stinking: 'stink',
+  strode: 'stride', stridden: 'stride', strides: 'stride', striding: 'stride',
+  swelled: 'swell', swollen: 'swell', swells: 'swell', swelling: 'swell',
+  taught: 'teach', teaches: 'teach', teaching: 'teach',
+  threw: 'throw', thrown: 'throw', throws: 'throw', throwing: 'throw',
+  trod: 'tread', trodden: 'tread', treads: 'tread', treading: 'tread',
+  woven: 'weave', wove: 'weave', weaves: 'weave', weaving: 'weave',
+  wept: 'weep', weeps: 'weep', weeping: 'weep',
+  wet: 'wet', wets: 'wet', wetting: 'wet',
+  won: 'win', wins: 'win', winning: 'win',
+  withdrew: 'withdraw', withdrawn: 'withdraw', withdraws: 'withdraw', withdrawing: 'withdraw',
+  wrung: 'wring', wrings: 'wring', wringing: 'wring',
+  // irregular plurals (expanded)
   children: 'child',
   men: 'man',
   women: 'woman',
@@ -104,7 +184,38 @@ export const IRREGULAR_LEMMAS: Record<string, string> = {
   teeth: 'tooth',
   geese: 'goose',
   mice: 'mouse',
-  // contractions
+  oxen: 'ox',
+  criteria: 'criterion',
+  phenomena: 'phenomenon',
+  indices: 'index',
+  foci: 'focus',
+  fungi: 'fungus',
+  cacti: 'cactus',
+  nuclei: 'nucleus',
+  syllabi: 'syllabus',
+  alumni: 'alumnus',
+  bacteria: 'bacterium',
+  data: 'datum',
+  media: 'medium',
+  // "leaves" / "lives" / "dives" are intentionally NOT mapped to their
+  // -f plural forms here — the verb interpretation ('leave', 'live',
+  // 'dive') is far more common in conversational English, and the -ves → -f
+  // rule in lemmaCandidates() handles the noun-plural fallback.
+  wives: 'wife',
+  halves: 'half',
+  knives: 'knife',
+  calves: 'calf',
+  selves: 'self',
+  dwarves: 'dwarf',
+  hooves: 'hoof',
+  wolves: 'wolf',
+  loaves: 'loaf',
+  shelves: 'shelf',
+  scarves: 'scarf',
+  thieves: 'thief',
+  // Contractions are now first-class dictionary entries (own translation /
+  // example pair). The lemma map only keeps the auxiliary fallback for cases
+  // where the contraction isn't found as its own entry yet.
   "doesn't": 'do', "don't": 'do', "didn't": 'do',
   "isn't": 'be', "aren't": 'be', "wasn't": 'be', "weren't": 'be',
   "hasn't": 'have', "haven't": 'have', "hadn't": 'have',
@@ -157,11 +268,48 @@ export function lemmaCandidates(token: string): string[] {
     push(stem + 'e'); // moved → move (after we already pushed mov)
     push(lower.slice(0, -1)); // moved → move alternative
   }
+  if (lower.endsWith('ves') && lower.length > 4) {
+    push(lower.slice(0, -3) + 'f'); // leaves → leaf, knives → knif? handled by 'fe' below
+    push(lower.slice(0, -3) + 'fe'); // knives → knife, wives → wife
+  }
   if (lower.endsWith('es') && lower.length > 3) push(lower.slice(0, -2)); // boxes → box
   if (lower.endsWith('s') && lower.length > 2 && !lower.endsWith('ss')) {
     push(lower.slice(0, -1)); // dogs → dog
   }
   if (lower.endsWith("'s")) push(lower.slice(0, -2)); // John's → john
+
+  // Comparatives and superlatives (Tier 2 audit). The regex rules cover the
+  // regular monosyllabic cases (faster, bigger, fastest, biggest); irregular
+  // ones (better, best, worse, worst, more, most, less, least) live in the
+  // dictionary as their own lemmas.
+  if (lower.endsWith('est') && lower.length > 4) {
+    const stem = lower.slice(0, -3); // biggest → bigg
+    push(stem);
+    if (stem.length >= 2 && stem[stem.length - 1] === stem[stem.length - 2]) {
+      push(stem.slice(0, -1)); // biggest → big
+    }
+    push(stem + 'e'); // largest → large (after we already pushed larg)
+    if (stem.endsWith('i')) push(stem.slice(0, -1) + 'y'); // happiest → happy
+  }
+  if (lower.endsWith('er') && lower.length > 3) {
+    const stem = lower.slice(0, -2); // bigger → bigg
+    push(stem);
+    if (stem.length >= 2 && stem[stem.length - 1] === stem[stem.length - 2]) {
+      push(stem.slice(0, -1)); // bigger → big
+    }
+    push(stem + 'e'); // larger → large
+    if (stem.endsWith('i')) push(stem.slice(0, -1) + 'y'); // happier → happy
+  }
+
+  // Adverbs derived with -ly. Only as a fallback — most -ly adverbs are
+  // either first-class dictionary entries (slowly, quickly) or compositional
+  // and the underlying adjective is what the learner cares about.
+  if (lower.endsWith('ly') && lower.length > 4) {
+    const stem = lower.slice(0, -2); // slowly → slow
+    push(stem);
+    if (stem.endsWith('i')) push(stem.slice(0, -1) + 'y'); // happily → happy
+    if (stem.endsWith('l')) push(stem.slice(0, -1)); // fully → ful? rare; cheap fallback
+  }
 
   return out;
 }
