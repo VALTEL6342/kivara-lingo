@@ -204,6 +204,27 @@ export const ankiConnect = {
     return invoke<number>('addNote', { note }, { url, apiKey });
   },
 
+  /**
+   * Patch one or more fields on an existing note in-place. Used by the
+   * `recapture_frame` hotkey so the user can replace a bad auto-captured
+   * frame without having to re-save the whole card.
+   *
+   * Note: AnkiConnect's `updateNoteFields` action takes the same shape as
+   * `addNote` but only the `id` + `fields` are honoured.
+   */
+  async updateNoteFields(
+    noteId: number,
+    fields: Record<string, string>,
+    url?: string,
+    apiKey?: string,
+  ): Promise<null> {
+    return invoke<null>(
+      'updateNoteFields',
+      { note: { id: noteId, fields } },
+      { url, apiKey },
+    );
+  },
+
   async storeMediaFile(
     filename: string,
     dataBase64: string,

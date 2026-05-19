@@ -549,6 +549,27 @@ export interface CreateCardResponse {
   warnings?: string[];
 }
 
+/**
+ * Re-capture / update the frame of an existing Anki note.
+ * Used by the `recapture_frame` hotkey (Alt+V).
+ */
+export interface UpdateNoteFrameRequest {
+  noteId: number;
+  /**
+   * Name of the frame field in the user's note model. If omitted the
+   * background side resolves it by scanning the current
+   * `ankiMapping.fieldSources` for the `frame` source.
+   */
+  fieldName?: string | null;
+  /** Base64 data URL (image/jpeg) for the new frame. */
+  frame: string;
+}
+
+export interface UpdateNoteFrameResponse {
+  ok: boolean;
+  error?: string;
+}
+
 export type AnkiPingErrorCode = 'NETWORK' | 'CORS' | 'TIMEOUT' | 'HTTP' | 'ANKI' | 'API_KEY';
 
 export interface AnkiPingResponse {

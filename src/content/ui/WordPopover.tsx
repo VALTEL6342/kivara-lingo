@@ -22,7 +22,7 @@ interface WordPopoverProps {
   sourceLang?: string;
   /** Whether to ask the background to invoke the AI provider on this hover. */
   includeAi?: boolean;
-  kind: 'mwe' | 'known' | 'unknown' | 'mastered' | 'ignored' | 'punct';
+  kind: 'mwe' | 'known' | 'proper-noun-known' | 'unknown' | 'mastered' | 'ignored' | 'punct';
   /** Sub-type for MWE tokens (idiom vs phrasal verb). */
   mweKind?: 'idiom' | 'phrasal';
   /** Resolved lemma if the dictionary hit came from the lemmatizer. */

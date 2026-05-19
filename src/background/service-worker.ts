@@ -8,6 +8,8 @@ import type {
   CaptureSettings,
   CreateCardRequest,
   CreateCardResponse,
+  UpdateNoteFrameRequest,
+  UpdateNoteFrameResponse,
   AnkiPingResponse,
   AnkiListsResponse,
   AnkiFieldsResponse,
@@ -184,6 +186,50 @@ onMessage('CREATE_CARD', async ({ data }) => {
     console.warn('[Kivara Lingo] note failed:', response.error);
   }
   return asJson(response);
+});
+
+/**
+ * UPDATE_NOTE_FRAME: patches the frame field of an existing Anki note with a
+ * freshly captured image. Used by the Alt+V hotkey when the auto-captured
+ * frame was bad (mid-transition, fade, loading spinner).
+ */
+onMessage('UPDATE_NOTE_FRAME', async ({ data }) => {
+  const request = data as unknown as UpdateNoteFrameRequest;
+  const mapping = await loadMapping();
+  let fieldName = request.fieldName ?? null;
+  if (!fieldName) {
+    const found = Object.entries(mapping.fieldSources ?? {}).find(
+      ([, s]) => s === 'frame',
+    );
+    fieldName = found?.[0] ?? null;
+  }
+  if (!fieldName) {
+    const out: UpdateNoteFrameResponse = {
+      ok: false,
+      error: 'No hay un campo de Anki mapeado a "frame"',
+    };
+    return asJson(out);
+  }
+  try {
+    const base64 = request.frame.includes(',')
+      ? request.frame.slice(request.frame.indexOf(',') + 1)
+      : request.frame;
+    const filename = `kivara-recapture-${Date.now()}.jpg`;
+    await ankiConnect.storeMediaFile(filename, base64, mapping.ankiUrl, mapping.apiKey);
+    // Anki renders pictures via `<img src="filename">` in the field HTML.
+    await ankiConnect.updateNoteFields(
+      request.noteId,
+      { [fieldName]: `<img src="${filename}">` },
+      mapping.ankiUrl,
+      mapping.apiKey,
+    );
+    const out: UpdateNoteFrameResponse = { ok: true };
+    return asJson(out);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'desconocido';
+    const out: UpdateNoteFrameResponse = { ok: false, error: reason };
+    return asJson(out);
+  }
 });
 
 /**

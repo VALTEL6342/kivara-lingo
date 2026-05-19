@@ -144,6 +144,13 @@ export const DEFAULT_ONBOARDING: OnboardingState = {
 
 export interface KivaraState {
   enabled: boolean;
+  /**
+   * Per-page visibility of the subtitle overlay. Distinct from `enabled`
+   * (the master extension toggle): the user can briefly hide the captions
+   * via the `toggle_subtitles` hotkey without disabling the whole extension.
+   * Defaults to `true`.
+   */
+  subtitlesVisible: boolean;
   panelOpen: boolean;
   isPopupMode: boolean;
   isDarkMode: boolean;
@@ -161,6 +168,7 @@ export interface KivaraState {
   audioCaptureActive: boolean;
 
   setEnabled: (v: boolean) => void;
+  setSubtitlesVisible: (v: boolean) => void;
   setPanelOpen: (v: boolean) => void;
   setIsPopupMode: (v: boolean) => void;
   setIsDarkMode: (v: boolean) => void;
@@ -238,9 +246,11 @@ async function transformSecrets(
   }
 }
 
+const fallbackStorage = new Map<string, string>();
+
 /**
- * chrome.storage adapter for zustand's persist middleware. Falls back to localStorage
- * when chrome.storage is unavailable (e.g. when bundling tests).
+ * chrome.storage adapter for zustand's persist middleware. Falls back to
+ * in-memory storage when chrome.storage is unavailable (e.g. unit tests).
  *
  * Wraps the read/write path with `transformSecrets` so credentials are
  * encrypted at rest in chrome.storage but plaintext in the React store.
@@ -259,11 +269,7 @@ function makeChromeStorage(area: 'sync' | 'local' = 'sync'): StateStorage {
         // fall through
       }
       if (raw == null) {
-        try {
-          raw = localStorage.getItem(name);
-        } catch {
-          raw = null;
-        }
+        raw = fallbackStorage.get(name) ?? null;
       }
       if (raw == null) return null;
       try {
@@ -288,7 +294,7 @@ function makeChromeStorage(area: 'sync' | 'local' = 'sync'): StateStorage {
         // fall through
       }
       try {
-        localStorage.setItem(name, toStore);
+        fallbackStorage.set(name, toStore);
       } catch {
         // ignore
       }
@@ -303,7 +309,7 @@ function makeChromeStorage(area: 'sync' | 'local' = 'sync'): StateStorage {
         // fall through
       }
       try {
-        localStorage.removeItem(name);
+        fallbackStorage.delete(name);
       } catch {
         // ignore
       }
@@ -365,6 +371,7 @@ export const useKivaraStore = create<KivaraState>()(
   persist(
     (set) => ({
       enabled: true,
+      subtitlesVisible: true,
       panelOpen: false,
       isPopupMode: false,
       isDarkMode: true,
@@ -382,6 +389,7 @@ export const useKivaraStore = create<KivaraState>()(
       audioCaptureActive: false,
 
       setEnabled: (v) => set({ enabled: v }),
+      setSubtitlesVisible: (v) => set({ subtitlesVisible: v }),
       setPanelOpen: (v) => set({ panelOpen: v }),
       setIsPopupMode: (v) => set({ isPopupMode: v }),
       setIsDarkMode: (v) => set({ isDarkMode: v }),
@@ -431,6 +439,7 @@ export const useKivaraStore = create<KivaraState>()(
       storage: createJSONStorage(() => makeChromeStorage('sync')),
       partialize: (state) => ({
         enabled: state.enabled,
+        subtitlesVisible: state.subtitlesVisible,
         panelOpen: state.panelOpen,
         isPopupMode: state.isPopupMode,
         isDarkMode: state.isDarkMode,
