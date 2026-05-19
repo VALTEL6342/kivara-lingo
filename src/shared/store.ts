@@ -246,9 +246,11 @@ async function transformSecrets(
   }
 }
 
+const fallbackStorage = new Map<string, string>();
+
 /**
- * chrome.storage adapter for zustand's persist middleware. Falls back to localStorage
- * when chrome.storage is unavailable (e.g. when bundling tests).
+ * chrome.storage adapter for zustand's persist middleware. Falls back to
+ * in-memory storage when chrome.storage is unavailable (e.g. unit tests).
  *
  * Wraps the read/write path with `transformSecrets` so credentials are
  * encrypted at rest in chrome.storage but plaintext in the React store.
@@ -267,11 +269,7 @@ function makeChromeStorage(area: 'sync' | 'local' = 'sync'): StateStorage {
         // fall through
       }
       if (raw == null) {
-        try {
-          raw = localStorage.getItem(name);
-        } catch {
-          raw = null;
-        }
+        raw = fallbackStorage.get(name) ?? null;
       }
       if (raw == null) return null;
       try {
@@ -296,7 +294,7 @@ function makeChromeStorage(area: 'sync' | 'local' = 'sync'): StateStorage {
         // fall through
       }
       try {
-        localStorage.setItem(name, toStore);
+        fallbackStorage.set(name, toStore);
       } catch {
         // ignore
       }
@@ -311,7 +309,7 @@ function makeChromeStorage(area: 'sync' | 'local' = 'sync'): StateStorage {
         // fall through
       }
       try {
-        localStorage.removeItem(name);
+        fallbackStorage.delete(name);
       } catch {
         // ignore
       }

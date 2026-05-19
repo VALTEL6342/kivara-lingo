@@ -28,9 +28,10 @@ const DEBOUNCE_MS = 200;
  * subtitle line.
  */
 function sanitizeTranslation(value: string): string {
-  if (!value || !value.includes('<')) return value;
+  if (!value || (!value.includes('<') && !value.includes('>'))) return value;
   const stripped = value
-    .replace(/<[^>]+>/g, '')
+    .replaceAll('<', ' ')
+    .replaceAll('>', ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
   return stripped || value;
