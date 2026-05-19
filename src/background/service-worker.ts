@@ -571,5 +571,31 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({ ok: true });
     return true;
   }
+  // UI requests downloading a dictionary pack from a URL. The SW carries the
+  // extension's host_permissions so this works for hosts the content script
+  // couldn't reach directly under page CORS (e.g. Cloudflare R2, GitHub
+  // raw). We stream into an ArrayBuffer and reply with a number[] copy so
+  // the bytes survive the structured-clone round-trip across processes.
+  if (message?.type === 'FETCH_PACK_URL' && typeof message.url === 'string') {
+    void (async () => {
+      try {
+        const url: string = message.url;
+        if (!/^https?:\/\//i.test(url)) {
+          sendResponse({ ok: false, error: 'URL must be http(s)://' });
+          return;
+        }
+        const res = await fetch(url, { redirect: 'follow' });
+        if (!res.ok) {
+          sendResponse({ ok: false, error: `HTTP ${res.status} ${res.statusText}` });
+          return;
+        }
+        const buf = await res.arrayBuffer();
+        sendResponse({ ok: true, bytes: Array.from(new Uint8Array(buf)) });
+      } catch (err) {
+        sendResponse({ ok: false, error: (err as Error).message });
+      }
+    })();
+    return true;
+  }
   return false;
 });
