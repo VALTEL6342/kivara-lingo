@@ -106,7 +106,10 @@
         "default": "Ctrl+S",
         "mac": "Command+S"
       },
-      "description": "Save hovered word to Anki"
+      "description": "Guardar palabra / selección actual en Anki"
+    },
+    "save_word_alt": {
+      "description": "Atajo alternativo (sin colisión con \"Guardar página\"). Asígnalo en chrome://extensions/shortcuts si Ctrl+S no funciona en tu plataforma."
     },
     "toggle_subtitles": {
       "suggested_key": {

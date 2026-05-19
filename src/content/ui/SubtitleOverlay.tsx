@@ -43,6 +43,13 @@ export function SubtitleOverlay({
   const [expandedMWEs, setExpandedMWEs] = useState<Set<string>>(new Set());
   const [altExpandedKey, setAltExpandedKey] = useState<string | null>(null);
   const [savedTokens, setSavedTokens] = useState<Set<string>>(new Set());
+  // Tier 1.1: free-form multi-word selection. Indices into the `tokens`
+  // array; the span is inclusive `[start..=end]` and may include
+  // whitespace / punctuation tokens which we trim out when saving.
+  const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
+  // Ref for the in-flight drag anchor (which token mousedown originated on).
+  // Kept out of state so we don't trigger re-renders on every mousemove.
+  const dragAnchorRef = useRef<number | null>(null);
 
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wordHoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,7 +189,19 @@ export function SubtitleOverlay({
   useEffect(() => {
     setHoveredKey(null);
     setAltExpandedKey(null);
+    setSelection(null);
+    dragAnchorRef.current = null;
   }, [cue?.id]);
+
+  // Tier 1.1: track mouseup globally so dragging off the subtitle still
+  // terminates the selection drag without leaving a stale anchor.
+  useEffect(() => {
+    const up = () => {
+      dragAnchorRef.current = null;
+    };
+    window.addEventListener('mouseup', up);
+    return () => window.removeEventListener('mouseup', up);
+  }, []);
 
   const handleTokenEnter = (key: string) => {
     if (wordHoverTimeout.current) clearTimeout(wordHoverTimeout.current);
@@ -190,6 +209,65 @@ export function SubtitleOverlay({
   };
   const handleTokenLeave = () => {
     wordHoverTimeout.current = setTimeout(() => setHoveredKey(null), 180);
+  };
+
+  /**
+   * Tier 1.1: compute the trimmed span text from the current selection. Used
+   * both by the floating "Guardar selección" button and by the Ctrl+S
+   * handler. Joins raw `text` fields (which preserve original capitalisation
+   * + internal spacing) and trims leading/trailing whitespace + punctuation.
+   */
+  const selectionText = useMemo(() => {
+    if (!selection) return null;
+    const slice = tokens.slice(selection.start, selection.end + 1);
+    const joined = slice.map((t) => t.text).join('').trim();
+    if (!joined) return null;
+    // Trim trailing punctuation runs (comma, period, semicolon, !, ?) so the
+    // saved card uses "thinking about you" not "thinking about you,".
+    return joined.replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '');
+  }, [selection, tokens]);
+
+  /**
+   * Tier 1.1: shift+click / drag selection started on a token. Plain click
+   * starts a fresh drag; shift+click extends the existing selection.
+   */
+  const handleTokenMouseDown = (idx: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (e.shiftKey && selection) {
+      const newStart = Math.min(selection.start, idx);
+      const newEnd = Math.max(selection.end, idx);
+      setSelection({ start: newStart, end: newEnd });
+      // Anchor the next drag at the far end so dragging away shrinks the
+      // selection the natural way.
+      dragAnchorRef.current = idx === newStart ? newEnd : newStart;
+      return;
+    }
+    dragAnchorRef.current = idx;
+    // Plain click resets the existing span. The drag below will recreate it
+    // if the user actually moves to a different token.
+    setSelection(null);
+  };
+
+  /**
+   * Tier 1.1: while a drag is in flight, hovering a different token expands
+   * the selection to cover both anchor + current token.
+   */
+  const handleTokenDragEnter = (idx: number) => {
+    const anchor = dragAnchorRef.current;
+    if (anchor == null || anchor === idx) return;
+    setSelection({
+      start: Math.min(anchor, idx),
+      end: Math.max(anchor, idx),
+    });
+  };
+
+  /**
+   * Tier 1.1: clicking on the subtitle background (not a token) clears any
+   * active selection so the user has a natural way to "deselect".
+   */
+  const handleSubtitleMouseDown = (e: React.MouseEvent) => {
+    if (e.shiftKey) return;
+    setSelection(null);
   };
 
   const toggleExpandMWE = (key: string) => {
@@ -222,9 +300,18 @@ export function SubtitleOverlay({
     [onSaveCard, targetSentence],
   );
 
-  // Respond to Ctrl+S / external save requests.
+  // Respond to Ctrl+S / external save requests. Priority order:
+  //   1. An active multi-word selection (Tier 1.1) — saves the whole span
+  //      as one card.
+  //   2. The hovered token — single-word card.
+  //   3. Fallback: save the entire sentence.
   useEffect(() => {
     if (saveRequestKey == null) return;
+    if (selectionText) {
+      handleSaveToken(selectionText);
+      setSelection(null);
+      return;
+    }
     const key = hoveredKeyRef.current;
     if (key) {
       const dictionary = lookupDictionary(key, cueLanguage);
@@ -233,7 +320,7 @@ export function SubtitleOverlay({
     } else if (targetSentence) {
       handleSaveToken(targetSentence);
     }
-  }, [saveRequestKey, cueLanguage, handleSaveToken, targetSentence]);
+  }, [saveRequestKey, cueLanguage, handleSaveToken, targetSentence, selectionText]);
 
   const handleMouseEnter = () => {
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
@@ -284,11 +371,51 @@ export function SubtitleOverlay({
         className="relative flex flex-col items-center pointer-events-auto select-text"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        onMouseDown={handleSubtitleMouseDown}
         data-kivara-hover-zone="true"
       >
         <div className="absolute -top-14 w-full h-14 bg-transparent z-0" />
 
-        {!isReading && (
+        {/* Tier 1.1: selection toolbar. Takes priority over the phrase
+            toolbar whenever a multi-word selection is active. */}
+        {!isReading && selectionText && (
+          <div className="absolute -top-12 z-20 flex items-center gap-1 bg-indigo-900/95 backdrop-blur-sm border border-indigo-400/60 p-1 rounded-lg shadow-xl transition-all duration-200">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-indigo-200 px-2">
+              Selección
+            </span>
+            <div className="w-px h-3.5 bg-indigo-400/40" />
+            <span
+              className="text-[11px] text-indigo-100 px-2 max-w-[280px] truncate"
+              title={selectionText}
+            >
+              “{selectionText}”
+            </span>
+            <div className="w-px h-3.5 bg-indigo-400/40" />
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSaveToken(selectionText);
+                setSelection(null);
+              }}
+              className="flex items-center gap-1 bg-indigo-500 hover:bg-indigo-400 text-white text-[11px] font-medium px-2 py-1 rounded transition-colors"
+              title="Guardar la selección como una sola tarjeta (Ctrl+S)"
+            >
+              <Quote size={11} /> Guardar selección
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelection(null);
+              }}
+              className="p-1 text-indigo-200 hover:text-white hover:bg-indigo-700/60 rounded transition-colors"
+              title="Limpiar selección"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {!isReading && !selectionText && (
           <div
             className={`absolute -top-12 z-10 flex items-center gap-1 bg-zinc-900/95 backdrop-blur-sm border border-zinc-700/60 p-1 rounded-lg shadow-xl transition-all duration-300 transform ${
               isHovered && hoveredKey === null ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0 pointer-events-none'
@@ -323,9 +450,14 @@ export function SubtitleOverlay({
             <div className="w-px h-3.5 bg-zinc-700/80" />
             <span className="text-[9px] text-zinc-500 px-2 hidden sm:flex items-center gap-1">
               <kbd className="font-sans font-semibold text-[9px] text-zinc-400 bg-zinc-800 border border-zinc-700 rounded px-1 py-px">
-                Scroll
+                Ctrl+Scroll
               </kbd>
-              <span>sobre la expresión para separarla</span>
+              <span>separa expresión</span>
+              <span className="text-zinc-600">·</span>
+              <kbd className="font-sans font-semibold text-[9px] text-zinc-400 bg-zinc-800 border border-zinc-700 rounded px-1 py-px">
+                Shift+Click
+              </kbd>
+              <span>selección libre</span>
             </span>
           </div>
         )}
@@ -363,15 +495,36 @@ export function SubtitleOverlay({
           ) : (
             <span>
               {tokens.map((tok, i) => {
+                // Tier 1.1: tokens (punct + word) inside the active selection
+                // get a highlight. Punct/whitespace tokens are still allowed
+                // in the range so the rendered span looks contiguous.
+                const isInSelection =
+                  selection != null && i >= selection.start && i <= selection.end;
                 if (tok.kind === 'punct') {
-                  return <React.Fragment key={tok.key + i}>{tok.text}</React.Fragment>;
+                  return (
+                    <span
+                      key={tok.key + i}
+                      className={isInSelection ? 'bg-indigo-500/30' : undefined}
+                    >
+                      {tok.text}
+                    </span>
+                  );
                 }
                 // `ignored` tokens render exactly like punct text — no
                 // affordance, no popover, no hover state. This is how the
-                // tokenizer hides auto-classified proper nouns.
+                // tokenizer hides auto-classified proper nouns. They can
+                // still participate in a span selection so the user can
+                // capture "Mr Anderson" as one card if they want.
                 if (tok.kind === 'ignored') {
                   return (
-                    <span key={tok.key + i} className="opacity-90">
+                    <span
+                      key={tok.key + i}
+                      onMouseDown={(e) => handleTokenMouseDown(i, e)}
+                      onMouseEnter={() => handleTokenDragEnter(i)}
+                      className={`opacity-90 cursor-text ${
+                        isInSelection ? 'bg-indigo-500/30' : ''
+                      }`}
+                    >
                       {tok.text}
                     </span>
                   );
@@ -385,6 +538,7 @@ export function SubtitleOverlay({
                 const isInteractive =
                   tok.kind === 'mwe' ||
                   tok.kind === 'known' ||
+                  tok.kind === 'proper-noun-known' ||
                   tok.kind === 'unknown' ||
                   tok.kind === 'mastered';
 
@@ -406,6 +560,13 @@ export function SubtitleOverlay({
                 } else if (tok.kind === 'known') {
                   colorClass =
                     'border-b border-zinc-300/40 border-dashed hover:text-white hover:bg-white/10';
+                } else if (tok.kind === 'proper-noun-known') {
+                  // Dictionary-recognised proper noun (America, NASA, Microsoft).
+                  // Subtler than a regular known so it doesn't compete with
+                  // vocab the learner is actually trying to study, but still
+                  // interactive so the popover can show cultural context.
+                  colorClass =
+                    'text-violet-300/90 border-b border-violet-400/40 border-dotted hover:text-white hover:bg-violet-400/10';
                 } else if (tok.kind === 'mastered') {
                   colorClass = 'opacity-50 hover:opacity-100 hover:bg-white/5';
                 } else {
@@ -416,8 +577,12 @@ export function SubtitleOverlay({
 
                 const parentForSplit = tok.kind !== 'mwe' ? findParentMWE(tok.key) : null;
                 const wheelable = tok.kind === 'mwe' || !!parentForSplit;
+                // Tier 1.3: scroll-to-split/join now requires a modifier key
+                // (Ctrl or Alt) so plain scroll always belongs to the page /
+                // video. Without the modifier the wheel event passes through.
                 const handleWheel = (e: React.WheelEvent) => {
                   if (!wheelable) return;
+                  if (!(e.ctrlKey || e.altKey || e.metaKey)) return;
                   e.preventDefault();
                   e.stopPropagation();
                   if (e.deltaY > 0 && tok.kind === 'mwe') {
@@ -436,15 +601,39 @@ export function SubtitleOverlay({
                   }
                 };
 
+                // Tier 1.3: when the token is wheelable (MWE or part of an
+                // expanded MWE) we hint at the gesture via the resize
+                // cursor. Otherwise fall back to `cursor-help` for
+                // interactive tokens so the hand stays consistent with the
+                // popover affordance.
+                const cursorClass = wheelable
+                  ? 'cursor-ew-resize'
+                  : isInteractive
+                    ? 'cursor-help'
+                    : '';
+                // Selection highlight overrides the per-kind background so
+                // the user can see exactly what they’ve selected even on
+                // saved / proper-noun / phrasal tokens.
+                const selectionClass = isInSelection
+                  ? 'bg-indigo-500/35 ring-1 ring-indigo-300/60'
+                  : '';
+
                 return (
                   <span key={tok.key + i} className="relative inline-block">
                     <span
-                      onMouseEnter={() => isInteractive && handleTokenEnter(tok.key)}
+                      onMouseEnter={() => {
+                        if (isInteractive) handleTokenEnter(tok.key);
+                        handleTokenDragEnter(i);
+                      }}
                       onMouseLeave={handleTokenLeave}
+                      onMouseDown={(e) => handleTokenMouseDown(i, e)}
                       onWheel={handleWheel}
-                      className={`relative rounded px-0.5 transition-all duration-150 ${
-                        isInteractive ? 'cursor-help' : ''
-                      } ${colorClass}`}
+                      title={
+                        wheelable
+                          ? 'Ctrl+Scroll para separar / unir esta expresión'
+                          : undefined
+                      }
+                      className={`relative rounded px-0.5 transition-all duration-150 ${cursorClass} ${colorClass} ${selectionClass}`}
                     >
                       {tok.text}
                       {isSaved && !isTokHovered && (

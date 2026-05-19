@@ -8,8 +8,25 @@ import { SubtitleOverlay } from './SubtitleOverlay';
 import { applyCleanupCss } from './cleanup-css';
 import { useKivaraStore } from '../../shared/store';
 import { captureFrame } from '../capture/frame';
-import type { CreateCardRequest, CreateCardResponse } from '../../shared/types';
+import type {
+  CreateCardRequest,
+  CreateCardResponse,
+  FieldSource,
+} from '../../shared/types';
 import type { SubtitleSource } from '../platform-adapters/types';
+
+/**
+ * Find the Anki field name (key in fieldSources) currently mapped to the
+ * `frame` source. Used by the Alt+V recapture handler to patch the right
+ * field on the existing note.
+ */
+function findFrameFieldName(
+  fieldSources: Record<string, FieldSource>,
+): string | undefined {
+  return Object.entries(fieldSources ?? {}).find(
+    ([, source]) => source === 'frame',
+  )?.[0];
+}
 
 interface ActiveCue {
   id: string;
@@ -28,6 +45,7 @@ interface AppProps {
 export function App({ adapter, videoElement, videoOverlayRoot }: AppProps) {
   const {
     enabled,
+    subtitlesVisible,
     panelOpen,
     isPopupMode,
     isDarkMode,
@@ -40,9 +58,16 @@ export function App({ adapter, videoElement, videoOverlayRoot }: AppProps) {
     setIsDarkMode,
     setSubtitleStyles,
     setAnkiMapping,
+    setSubtitlesVisible,
   } = useKivaraStore();
 
   const [activeCue, setActiveCue] = useState<ActiveCue | null>(null);
+  // Tier 1.2: tracks the most recently saved Anki note so the
+  // `recapture_frame` hotkey can patch its frame field in-place.
+  const lastSavedNoteRef = useRef<{
+    noteId: number;
+    fieldName: string | null;
+  } | null>(null);
   // Native-language alt cue (e.g. native Spanish track running parallel to
   // the active English captions). Preferred as the dual-caption source over
   // a remote MT translation — see SubtitleOverlay for the priority chain.
@@ -350,21 +375,81 @@ export function App({ adapter, videoElement, videoOverlayRoot }: AppProps) {
       } else if (msg?.type === 'RUN_COMMAND') {
         switch (msg.command) {
           case 'save_word':
+          case 'save_word_alt':
+            // Tier 1.5: keep two commands wired to the same handler so the
+            // user can bind whichever combo (Ctrl+S or Ctrl+Shift+S, etc.)
+            // doesn't collide with the host page / browser on their setup.
             setSaveTick(Date.now());
             break;
-          case 'toggle_subtitles':
-            // Phase 2: hide overlay
+          case 'toggle_subtitles': {
+            // Tier 1.2: actually toggle the subtitle overlay visibility.
+            // Distinct from the master `enabled` toggle so the user can
+            // briefly peek at unsubtitled content without disabling
+            // everything else (audio capture, panel, AnkiConnect retries).
+            const next = !useKivaraStore.getState().subtitlesVisible;
+            setSubtitlesVisible(next);
+            toast.message(
+              next ? 'Subtítulos visibles' : 'Subtítulos ocultos',
+              { duration: 1400 },
+            );
             break;
+          }
+          // Tier 1.2: rename to match manifest.json `repeat_cue` so Alt+R
+          // actually rewinds the cue. The legacy `repeat_phrase` is kept as
+          // an alias for any external script that may still send it.
+          case 'repeat_cue':
           case 'repeat_phrase':
             if (videoElement && activeCue?.start != null) {
               videoElement.currentTime = activeCue.start / 1000;
               void videoElement.play().catch(() => {});
             }
             break;
+          case 'recapture_frame': {
+            // Tier 1.2: re-capture the current video frame and patch the
+            // most recently saved Anki note. Useful when the auto-captured
+            // frame caught a transition / fade / loading spinner.
+            const ref = lastSavedNoteRef.current;
+            if (!videoElement || !ref) {
+              toast.message(
+                'No hay tarjeta reciente que actualizar',
+                { duration: 1800 },
+              );
+              break;
+            }
+            void captureFrame(videoElement).then(async (frameDataUrl) => {
+              if (!frameDataUrl) {
+                toast.error('No se pudo capturar el frame');
+                return;
+              }
+              try {
+                const response = (await sendMessage(
+                  'UPDATE_NOTE_FRAME',
+                  {
+                    noteId: ref.noteId,
+                    fieldName: ref.fieldName,
+                    frame: frameDataUrl,
+                  },
+                  'background',
+                )) as { ok: boolean; error?: string };
+                if (response?.ok) {
+                  toast.success('Frame actualizado', { duration: 1600 });
+                } else {
+                  toast.error(response?.error ?? 'Error actualizando frame');
+                }
+              } catch (err) {
+                const reason = err instanceof Error ? err.message : 'desconocido';
+                toast.error(`Error actualizando frame: ${reason}`);
+              }
+            });
+            break;
+          }
           case 'show_translation':
-            // No-op for now: translation already shows on hover.
+            // Translation is already shown automatically on hover. Kept here
+            // so unknown commands don't fall through to the default warning,
+            // but no UI action is needed.
             break;
           default:
+            console.warn('[Kivara Lingo] unknown command:', msg.command);
             break;
         }
       }
@@ -396,6 +481,14 @@ export function App({ adapter, videoElement, videoOverlayRoot }: AppProps) {
     try {
       const response = (await sendMessage('CREATE_CARD', request, 'background')) as CreateCardResponse;
       if (response?.ok) {
+        // Remember the noteId + frame field so `recapture_frame` (Alt+V)
+        // can update this specific note.
+        if (response.noteId != null) {
+          lastSavedNoteRef.current = {
+            noteId: response.noteId,
+            fieldName: findFrameFieldName(ankiMapping.fieldSources) ?? null,
+          };
+        }
         toast.custom(
           (id) => (
             <div className="flex items-center gap-2.5 bg-zinc-900/95 backdrop-blur-xl border border-zinc-700/60 rounded-lg shadow-2xl px-3 py-2.5 min-w-[280px]">
@@ -433,7 +526,7 @@ export function App({ adapter, videoElement, videoOverlayRoot }: AppProps) {
   };
 
   const overlayPortal = useMemo(() => {
-    if (!videoOverlayRoot || !enabled) return null;
+    if (!videoOverlayRoot || !enabled || !subtitlesVisible) return null;
     return createPortal(
       <div
         className={`absolute inset-0 pointer-events-none ${isDarkMode ? 'dark' : ''}`}
@@ -455,6 +548,7 @@ export function App({ adapter, videoElement, videoOverlayRoot }: AppProps) {
     activeCue,
     altCue,
     enabled,
+    subtitlesVisible,
     isDarkMode,
     mode,
     saveTick,

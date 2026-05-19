@@ -1,9 +1,27 @@
 import enDict from '../../assets/dictionaries/en.json';
+import enExtensions from '../../assets/dictionaries/en-extensions.json';
 import type { DictionaryEntry } from '../../shared/types';
 import { lemmaCandidates } from './lemma';
 
+// Strip the `_meta` informational block before treating the file as a
+// dictionary so it doesn't pollute lookups.
+const { _meta: _enExtMeta, ...enExtensionEntries } = enExtensions as Record<
+  string,
+  unknown
+>;
+void _enExtMeta;
+
+// Merge precedence: the curated extension pack wins over the base bundle for
+// any colliding key. Most collisions are slang/contractions (gonna, wanna,
+// gotta, ain't) where the base entries were auto-generated from Wiktionary
+// and have low-quality translations — the extension entries are hand-curated.
+const enMerged = {
+  ...(enDict as Record<string, DictionaryEntry>),
+  ...(enExtensionEntries as Record<string, DictionaryEntry>),
+};
+
 const DICTIONARIES: Record<string, Record<string, DictionaryEntry>> = {
-  en: enDict as Record<string, DictionaryEntry>,
+  en: enMerged,
 };
 
 /**

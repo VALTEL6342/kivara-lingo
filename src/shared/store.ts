@@ -98,6 +98,13 @@ export const DEFAULT_ONBOARDING: OnboardingState = {
 
 export interface KivaraState {
   enabled: boolean;
+  /**
+   * Per-page visibility of the subtitle overlay. Distinct from `enabled`
+   * (the master extension toggle): the user can briefly hide the captions
+   * via the `toggle_subtitles` hotkey without disabling the whole extension.
+   * Defaults to `true`.
+   */
+  subtitlesVisible: boolean;
   panelOpen: boolean;
   isPopupMode: boolean;
   isDarkMode: boolean;
@@ -113,6 +120,7 @@ export interface KivaraState {
   audioCaptureActive: boolean;
 
   setEnabled: (v: boolean) => void;
+  setSubtitlesVisible: (v: boolean) => void;
   setPanelOpen: (v: boolean) => void;
   setIsPopupMode: (v: boolean) => void;
   setIsDarkMode: (v: boolean) => void;
@@ -236,6 +244,7 @@ export const useKivaraStore = create<KivaraState>()(
   persist(
     (set) => ({
       enabled: true,
+      subtitlesVisible: true,
       panelOpen: false,
       isPopupMode: false,
       isDarkMode: true,
@@ -251,6 +260,7 @@ export const useKivaraStore = create<KivaraState>()(
       audioCaptureActive: false,
 
       setEnabled: (v) => set({ enabled: v }),
+      setSubtitlesVisible: (v) => set({ subtitlesVisible: v }),
       setPanelOpen: (v) => set({ panelOpen: v }),
       setIsPopupMode: (v) => set({ isPopupMode: v }),
       setIsDarkMode: (v) => set({ isDarkMode: v }),
@@ -295,6 +305,7 @@ export const useKivaraStore = create<KivaraState>()(
       storage: createJSONStorage(() => makeChromeStorage('sync')),
       partialize: (state) => ({
         enabled: state.enabled,
+        subtitlesVisible: state.subtitlesVisible,
         panelOpen: state.panelOpen,
         isPopupMode: state.isPopupMode,
         isDarkMode: state.isDarkMode,
