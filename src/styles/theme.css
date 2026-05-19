@@ -216,6 +216,23 @@
   /* Mono variant — for endpoints, paths */
   .sl-input.sl-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
 
+  /* Large variant — used in onboarding & full-page surfaces where the
+     11px / 30px-tall default looks cramped. Keeps the same chrome but
+     gives text room to breathe (descenders, capitals, dropdown chevron). */
+  .sl-input.sl-lg,
+  .sl-select.sl-lg {
+    height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+    line-height: 40px;
+    border-radius: 8px;
+  }
+  .sl-select.sl-lg {
+    padding-right: 36px;
+    background-position: right 14px center;
+    background-size: 12px 12px;
+  }
+
   /* Native select chevron */
   .sl-select {
     appearance: none;
@@ -363,6 +380,56 @@
   .dark input[type="range"].sl-range:focus-visible::-moz-range-thumb {
     border-color: #a5b4fc; /* indigo-300 */
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 0 5px rgba(129, 140, 248, 0.22);
+  }
+}
+
+/* ---------- Kivara Lingo micro-animation keyframes ------------------------ */
+
+@keyframes sl-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sl-step-fwd {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes sl-step-back {
+  from { opacity: 0; transform: translateX(-28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes sl-celebrate {
+  0%   { transform: scale(1); }
+  25%  { transform: scale(1.18); }
+  55%  { transform: scale(0.93); }
+  75%  { transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+
+@keyframes sl-badge-pop {
+  0%   { transform: scale(0.65); opacity: 0; }
+  65%  { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+@layer utilities {
+  .sl-animate-fade-up {
+    animation: sl-fade-up 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .sl-animate-step-fwd {
+    animation: sl-step-fwd 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .sl-animate-step-back {
+    animation: sl-step-back 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .sl-animate-celebrate {
+    animation: sl-celebrate 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 80ms;
+  }
+  .sl-animate-badge-pop {
+    animation: sl-badge-pop 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 }
 

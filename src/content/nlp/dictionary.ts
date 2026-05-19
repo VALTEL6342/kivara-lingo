@@ -1,4 +1,5 @@
 import enDict from '../../assets/dictionaries/en.json';
+import enMwes from '../../assets/mwes/en.json';
 import enExtensions from '../../assets/dictionaries/en-extensions.json';
 import type { DictionaryEntry } from '../../shared/types';
 import { lemmaCandidates } from './lemma';
@@ -11,14 +12,19 @@ const { _meta: _enExtMeta, ...enExtensionEntries } = enExtensions as Record<
 >;
 void _enExtMeta;
 
-// Merge precedence: the curated extension pack wins over the base bundle for
-// any colliding key. Most collisions are slang/contractions (gonna, wanna,
-// gotta, ain't) where the base entries were auto-generated from Wiktionary
-// and have low-quality translations — the extension entries are hand-curated.
-const enMerged = {
+const enMerged: Record<string, DictionaryEntry> = {
+  ...(enMwes as Record<string, DictionaryEntry>),
   ...(enDict as Record<string, DictionaryEntry>),
-  ...(enExtensionEntries as Record<string, DictionaryEntry>),
 };
+
+for (const [key, value] of Object.entries(
+  enExtensionEntries as Record<string, DictionaryEntry>,
+)) {
+  enMerged[key] = {
+    ...(enMerged[key] ?? {}),
+    ...value,
+  };
+}
 
 const DICTIONARIES: Record<string, Record<string, DictionaryEntry>> = {
   en: enMerged,

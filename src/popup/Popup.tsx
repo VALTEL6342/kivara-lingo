@@ -1,17 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sendMessage } from 'webext-bridge/popup';
-import { Power, ExternalLink, MicIcon, MicOffIcon, Settings } from 'lucide-react';
+import {
+  Power, ExternalLink, Mic, MicOff, Settings, RefreshCw,
+} from 'lucide-react';
 import { useKivaraStore } from '../shared/store';
-import { KivaraLingoLogo } from '../app/components/KivaraLingoLogo';
 import type { AnkiPingErrorCode, AnkiPingResponse } from '../shared/types';
 
+type PingStatus = 'idle' | 'pinging' | 'ok' | 'error';
+
 interface PingState {
-  status: 'idle' | 'pinging' | 'ok' | 'error';
+  status: PingStatus;
   version?: number;
   error?: string;
   code?: AnkiPingErrorCode;
 }
 
+/**
+ * Browser-action popup. The visual structure mirrors the design mock 1:1:
+ *
+ *  • Compact header with icon-only badge (no logo text), name + version,
+ *    and a Settings gear that opens the options page.
+ *  • Three pill rows: AnkiConnect status, master enable switch, "open
+ *    panel in tab", and the audio capture toggle.
+ *  • Soft footer with the theme toggle on the left and a small ©Kivara
+ *    on the right.
+ *
+ * All Anki and tab-capture wiring is preserved from the previous build.
+ */
 export function Popup() {
   const {
     enabled,
@@ -31,11 +46,6 @@ export function Popup() {
     document.documentElement.classList.toggle('dark', isDarkMode);
   }, [isDarkMode]);
 
-  /**
-   * Single source of truth for pinging AnkiConnect. Wrapped in `useCallback`
-   * so the auto-poll effect and the "Reintentar" button both call exactly
-   * the same code path.
-   */
   const runPing = useCallback(async () => {
     setPing({ status: 'pinging' });
     try {
@@ -54,7 +64,7 @@ export function Popup() {
     }
   }, [ankiMapping.ankiUrl, ankiMapping.apiKey]);
 
-  // Ping on mount / when the AnkiConnect URL or API key changes.
+  // Ping on mount / whenever the AnkiConnect URL or key changes.
   useEffect(() => {
     cancelledRef.current = false;
     void runPing();
@@ -63,10 +73,8 @@ export function Popup() {
     };
   }, [runPing]);
 
-  // Auto-retry every 4s while we are in an error state. This is what the
-  // user actually wants: open the popup, open Anki, and watch the dot
-  // turn green within a few seconds — without having to remember to
-  // press "Reintentar".
+  // Auto-retry every 4s while disconnected — the popup recovers as soon as
+  // the user opens Anki, no manual click needed.
   useEffect(() => {
     if (ping.status !== 'error') return;
     const interval = window.setInterval(() => {
@@ -75,8 +83,7 @@ export function Popup() {
     return () => window.clearInterval(interval);
   }, [ping.status, runPing]);
 
-  // Re-ping the instant the popup regains focus — e.g. the user just
-  // alt-tabbed to start Anki and came back.
+  // Re-ping the instant focus comes back (alt-tab → Anki → back here).
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState === 'visible') void runPing();
@@ -97,7 +104,7 @@ export function Popup() {
         await chrome.tabs.sendMessage(tab.id, { type: 'OPEN_PANEL' });
       }
     } catch {
-      // ignore — no content script on tab
+      /* ignore — no content script on tab */
     }
     window.close();
   }
@@ -130,113 +137,182 @@ export function Popup() {
     if (chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage();
   }
 
+  // Status indicator colour for the AnkiConnect dot. The "pinging" state
+  // also re-uses amber so the pulse animation is visible while we wait.
   const statusColor =
     ping.status === 'ok'
-      ? 'bg-emerald-500'
+      ? '#22c55e'
       : ping.status === 'error'
-        ? 'bg-rose-500'
-        : 'bg-amber-400';
-
-  const statusLabel =
-    ping.status === 'ok'
-      ? `Conectado a Anki (v${ping.version})`
-      : ping.status === 'pinging'
-        ? 'Comprobando AnkiConnect…'
-        : ping.status === 'error'
-          ? 'AnkiConnect no responde'
-          : '—';
+        ? '#f43f5e'
+        : '#f59e0b';
 
   return (
-    <div className={`w-[360px] ${isDarkMode ? 'dark' : ''}`} style={{ colorScheme: isDarkMode ? 'dark' : 'light' }}>
-      <div className="p-4 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans">
-        <header className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <KivaraLingoLogo size={28} />
+    <div className={`${isDarkMode ? 'dark' : ''}`} style={{ colorScheme: isDarkMode ? 'dark' : 'light' }}>
+      <div className="w-[320px] bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans rounded-2xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden">
+
+        {/* Header — icon-only badge, name/version, settings gear */}
+        <div className="px-4 pt-3.5 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+              enabled ? 'bg-indigo-600 shadow-sm shadow-indigo-500/40' : 'bg-zinc-200 dark:bg-zinc-800'
+            }`}>
+              <svg
+                width={17}
+                height={17}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-white dark:text-white"
+                aria-label="Kivara Lingo"
+              >
+                <rect x="3" y="6" width="18" height="13" rx="2.5" />
+                <line x1="7" y1="12" x2="13" y2="12" />
+                <line x1="7" y1="15.5" x2="11" y2="15.5" />
+                <circle cx="17.5" cy="14" r="1.2" fill="currentColor" stroke="none" />
+              </svg>
+            </div>
             <div>
-              <div className="text-sm font-bold leading-none">Kivara Lingo</div>
-              <div className="text-[10px] text-zinc-500 leading-none mt-0.5">v0.2 — Fase 2</div>
+              <div className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">
+                Kivara <span className="text-indigo-500 dark:text-indigo-400">Lingo</span>
+              </div>
+              <div className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-tight">
+                v0.2 · Fase 2
+              </div>
             </div>
           </div>
           <button
             onClick={openOptions}
-            className="p-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400"
-            title="Abrir página de opciones"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            title="Configuración"
           >
-            <Settings size={14} />
+            <Settings size={15} />
           </button>
-        </header>
+        </div>
 
-        <section className="rounded-md border border-zinc-200 dark:border-zinc-800 px-3 py-2 mb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className={`inline-block w-2.5 h-2.5 rounded-full ${statusColor}`} />
-              <span className="text-[12px]">{statusLabel}</span>
+        <div className="p-3 space-y-1.5">
+
+          {/* AnkiConnect status pill */}
+          <div className={`rounded-xl border px-3 py-2.5 ${
+            ping.status === 'ok'
+              ? 'border-emerald-200 dark:border-emerald-500/25 bg-emerald-50/60 dark:bg-emerald-500/10'
+              : ping.status === 'error'
+                ? 'border-rose-200 dark:border-rose-500/25 bg-rose-50/60 dark:bg-rose-500/10'
+                : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/60'
+          }`}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="relative flex w-2 h-2 shrink-0">
+                  {ping.status === 'ok' && (
+                    <span
+                      className="absolute inset-0 rounded-full animate-ping"
+                      style={{ backgroundColor: `${statusColor}50`, animationDuration: '2.4s' }}
+                    />
+                  )}
+                  <span
+                    className="relative inline-flex w-2 h-2 rounded-full"
+                    style={{ backgroundColor: statusColor }}
+                  />
+                </span>
+                <span className={`text-[11px] font-medium ${
+                  ping.status === 'ok'
+                    ? 'text-emerald-700 dark:text-emerald-400'
+                    : ping.status === 'error'
+                      ? 'text-rose-700 dark:text-rose-400'
+                      : 'text-zinc-600 dark:text-zinc-400'
+                }`}>
+                  {ping.status === 'ok'
+                    ? `AnkiConnect v${ping.version} · activo`
+                    : ping.status === 'pinging'
+                      ? 'Comprobando AnkiConnect…'
+                      : ping.status === 'error'
+                        ? 'AnkiConnect no responde'
+                        : '—'}
+                </span>
+              </div>
+              <button
+                onClick={() => void runPing()}
+                disabled={ping.status === 'pinging'}
+                className="p-1 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors"
+                title="Reintentar"
+              >
+                <RefreshCw size={11} className={ping.status === 'pinging' ? 'animate-spin' : ''} />
+              </button>
             </div>
-            <button
-              onClick={() => void runPing()}
-              disabled={ping.status === 'pinging'}
-              className="text-[10px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 disabled:opacity-50"
-            >
-              Reintentar
-            </button>
+            {ping.status === 'error' && (
+              <p className="text-[10px] text-rose-600/80 dark:text-rose-400/80 mt-1.5 leading-snug">
+                {ping.code === 'API_KEY'
+                  ? 'AnkiConnect requiere API key — configúrala en Cards → Conexión.'
+                  : ping.code === 'TIMEOUT'
+                    ? 'AnkiConnect tardó demasiado en responder. Verifica que Anki esté activo.'
+                    : 'Abre Anki y verifica que AnkiConnect esté instalado. Los subtítulos siguen funcionando sin conexión.'}
+              </p>
+            )}
           </div>
-          {ping.status === 'error' && (
-            <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1 leading-snug">
-              {ping.code === 'API_KEY'
-                ? 'Tu AnkiConnect requiere API key — configúrala en la tab Cards → Conexión.'
-                : ping.code === 'TIMEOUT'
-                  ? 'AnkiConnect tardó demasiado. Verifica que Anki esté respondiendo.'
-                  : 'Abre Anki y verifica que el complemento AnkiConnect esté instalado. Los subtítulos y la traducción siguen funcionando sin conexión — solo "Guardar" requiere Anki.'}
-            </p>
-          )}
-        </section>
 
-        <section className="space-y-2">
+          {/* Master enable / disable */}
           <button
             onClick={() => setEnabled(!enabled)}
-            className={`w-full flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+            className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all ${
               enabled
-                ? 'bg-indigo-600 text-white hover:bg-indigo-500'
-                : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700'
+                ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm shadow-indigo-500/25'
+                : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800'
             }`}
           >
-            <span className="flex items-center gap-2">
-              <Power size={14} />
+            <Power size={14} />
+            <span className="text-[12px] font-semibold flex-1 text-left">
               {enabled ? 'Extensión activada' : 'Extensión desactivada'}
+            </span>
+            <span className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded ${
+              enabled ? 'bg-white/15 text-white' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-500'
+            }`}>
+              {enabled ? 'ON' : 'OFF'}
             </span>
           </button>
 
+          {/* Open panel in active tab */}
           <button
             onClick={openPanelOnActiveTab}
-            className="w-full flex items-center justify-between rounded-md px-3 py-2 text-sm bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+            className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 transition-colors"
           >
-            <span>Abrir panel en la pestaña</span>
-            <ExternalLink size={12} />
+            <ExternalLink size={13} className="text-zinc-400 shrink-0" />
+            <span className="text-[12px] font-medium flex-1 text-left">Abrir panel en la pestaña</span>
           </button>
 
+          {/* Audio capture toggle */}
           <button
             onClick={toggleAudioCapture}
-            className={`w-full flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
+            className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all ${
               audioCaptureActive
-                ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 hover:bg-rose-500/25'
-                : 'bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                ? 'bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/25 text-rose-700 dark:text-rose-300'
+                : 'bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
             }`}
             title="Captura el audio de la pestaña para anexar a las tarjetas Anki"
           >
-            <span className="flex items-center gap-2">
-              {audioCaptureActive ? <MicIcon size={14} /> : <MicOffIcon size={14} />}
+            {audioCaptureActive
+              ? <Mic size={13} className="text-rose-500 shrink-0" />
+              : <MicOff size={13} className="text-zinc-400 shrink-0" />}
+            <span className="text-[12px] font-medium flex-1 text-left">
               {audioCaptureActive ? 'Captura de audio activa' : 'Activar captura de audio'}
             </span>
-            <span className="text-[9px] text-zinc-500">tabCapture</span>
+            <span className="text-[9px] text-zinc-400 dark:text-zinc-600 font-mono shrink-0">
+              tabCapture
+            </span>
           </button>
+        </div>
 
+        {/* Footer — theme switch + ©Kivara */}
+        <div className="px-4 py-2.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
-            className="w-full text-left text-[11px] text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-1"
+            className="text-[11px] text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
           >
-            Cambiar a tema {isDarkMode ? 'claro' : 'oscuro'}
+            Tema {isDarkMode ? 'claro' : 'oscuro'}
           </button>
-        </section>
+          <span className="text-[10px] text-zinc-200 dark:text-zinc-800">©Kivara 2026</span>
+        </div>
       </div>
     </div>
   );
