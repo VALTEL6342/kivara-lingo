@@ -22,6 +22,17 @@ export interface SubtitleStyles {
    * the adapter couldn't extract an alignment hint.
    */
   keepNativeAlignment: boolean;
+  /**
+   * Background opacity (0..100) used while the subtitle is being hovered in
+   * learning mode. Always coerced to be ≥ `backgroundOpacity` so hovering
+   * can only ever make the plate MORE legible, never less. Default 80.
+   */
+  hoverOpacity: number;
+  /**
+   * Apply a `backdrop-filter: blur(2px)` behind the plate during hover so
+   * busy scenes don't bleed through onto the popover. Default true.
+   */
+  hoverBlur: boolean;
 }
 
 /** Native cue alignment as preserved by the parser/adapter. */

@@ -28,6 +28,11 @@ export const DEFAULT_SUBTITLE_STYLES: SubtitleStyles = {
   // the Subtitles tab.
   keepNativeLineBreaks: false,
   keepNativeAlignment: false,
+  // Hover affordance defaults — match the design mock so the plate becomes
+  // clearly more opaque while the user reads, with a soft blur to drown out
+  // busy scenes.
+  hoverOpacity: 80,
+  hoverBlur: true,
 };
 
 export const DEFAULT_ANKI_MAPPING: AnkiMapping = {

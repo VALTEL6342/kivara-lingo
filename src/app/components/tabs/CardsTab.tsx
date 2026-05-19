@@ -289,13 +289,17 @@ export function CardsTab({ mapping, setMapping, mockData }: CardsTabProps) {
             <EmptyState icon={<AlertCircle size={13} />} text="Este note type no tiene campos." />
           )}
 
-          {conn === 'connected' && ankiFields.map((field) => {
+          {conn === 'connected' && ankiFields.map((field, i) => {
             const src = mapping.fieldSources[field] ?? detectSource(field);
             const meta = SOURCE_META[src];
             const isOpen = editingField === field;
             const auto = src === detectSource(field);
             return (
-              <div key={field} className="rounded-md bg-zinc-50/70 dark:bg-zinc-800/30 border border-zinc-200/60 dark:border-zinc-800/70 overflow-hidden">
+              <div
+                key={field}
+                className="rounded-md bg-zinc-50/70 dark:bg-zinc-800/30 border border-zinc-200/60 dark:border-zinc-800/70 overflow-hidden sl-animate-fade-up"
+                style={{ animationDelay: `${i * 40}ms` }}
+              >
                 <button
                   onClick={() => setEditingField(isOpen ? null : field)}
                   className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-100/60 dark:hover:bg-zinc-800/60 transition-colors"
@@ -312,28 +316,36 @@ export function CardsTab({ mapping, setMapping, mockData }: CardsTabProps) {
                   <ChevronDown size={10} className={`text-zinc-400 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
 
-                {isOpen && (
-                  <div className="border-t border-zinc-200/60 dark:border-zinc-800/60 p-1.5 bg-white dark:bg-zinc-900 animate-in slide-in-from-top-1 duration-150 space-y-1">
-                    <div className="text-[10px] text-zinc-500 dark:text-zinc-500 px-1 leading-snug">
-                      {meta.description}
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {SOURCE_OPTIONS.map(s => (
-                        <button
-                          key={s}
-                          onClick={() => setSource(field, s)}
-                          className={`text-[10px] px-1.5 py-0.5 rounded border font-medium transition-colors ${
-                            src === s
-                              ? `${SOURCE_META[s].color} border-current`
-                              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700'
-                          }`}
-                        >
-                          {SOURCE_META[s].label}
-                        </button>
-                      ))}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateRows: isOpen ? '1fr' : '0fr',
+                    transition: 'grid-template-rows 200ms ease',
+                  }}
+                >
+                  <div className="overflow-hidden">
+                    <div className="border-t border-zinc-200/60 dark:border-zinc-800/60 p-1.5 bg-white dark:bg-zinc-900 space-y-1">
+                      <div className="text-[10px] text-zinc-500 dark:text-zinc-500 px-1 leading-snug">
+                        {meta.description}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {SOURCE_OPTIONS.map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => setSource(field, s)}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border font-medium transition-colors ${
+                              src === s
+                                ? `${SOURCE_META[s].color} border-current`
+                                : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700'
+                            }`}
+                          >
+                            {SOURCE_META[s].label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             );
           })}
@@ -346,31 +358,37 @@ export function CardsTab({ mapping, setMapping, mockData }: CardsTabProps) {
           <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
             <Layers size={10} className="text-indigo-500" /> Preview
           </span>
-          <div className="flex bg-zinc-200/80 dark:bg-zinc-800/80 rounded-md p-0.5">
-            {(['front', 'back'] as const).map(side => (
-              <button
-                key={side}
-                onClick={() => setPreviewSide(side)}
-                className={`text-[9px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded transition-all ${previewSide === side ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-zinc-500 dark:text-zinc-400'}`}
-              >
-                {side === 'front' ? 'Frente' : 'Reverso'}
-              </button>
-            ))}
+          <div className="flex items-center gap-1.5">
+            <div className="flex bg-zinc-200/80 dark:bg-zinc-800/80 rounded-md p-0.5">
+              {(['front', 'back'] as const).map((side) => (
+                <button
+                  key={side}
+                  onClick={() => setPreviewSide(side)}
+                  className={`text-[9px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded transition-all ${
+                    previewSide === side
+                      ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-300 shadow-sm'
+                      : 'text-zinc-500 dark:text-zinc-400'
+                  }`}
+                >
+                  {side === 'front' ? 'Frente' : 'Reverso'}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setPreviewSide(previewSide === 'front' ? 'back' : 'front')}
+              className="p-1 rounded-md text-zinc-400 hover:text-indigo-400 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-300 hover:rotate-180"
+              title="Voltear"
+            >
+              <RotateCcw size={11} />
+            </button>
           </div>
         </div>
 
         <div
-          className="relative rounded-xl shadow-md overflow-hidden"
+          key={previewSide}
+          className="rounded-xl shadow-md overflow-hidden animate-in fade-in zoom-in-95 duration-150"
           style={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', padding: 12 }}
         >
-          <button
-            onClick={() => setPreviewSide(previewSide === 'front' ? 'back' : 'front')}
-            style={{ position: 'absolute', top: 6, right: 8, zIndex: 10 }}
-            className="text-zinc-500 hover:text-indigo-400 hover:rotate-180 transition-all duration-300"
-            title="Voltear"
-          >
-            <RotateCcw size={11} />
-          </button>
           {previewSide === 'front' ? <FrontTemplate mockData={mockData} /> : <BackTemplate mockData={mockData} />}
         </div>
 
@@ -465,17 +483,30 @@ function EmptyState({ icon, text }: { icon: React.ReactNode; text: string }) {
 
 function FrontTemplate({ mockData }: { mockData: CardsTabProps['mockData'] }) {
   return (
-    <div className="font-sans text-zinc-100 animate-in fade-in zoom-in-95 duration-200">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="text-2xl font-bold text-white leading-tight">{mockData.word}</div>
-          <div className="text-[11px] font-mono text-zinc-400 mt-0.5 inline-block bg-zinc-800/70 px-1.5 py-0.5 rounded">
-            {mockData.phonetic ?? '/ipa/'}
-          </div>
-        </div>
-        <button className="rounded-full flex items-center justify-center shrink-0" style={{ width: 28, height: 28, backgroundColor: 'rgba(99,102,241,0.2)', color: '#a5b4fc' }}>
-          <Volume2 size={12} />
+    <div className="font-sans">
+      {/* Top bar — POS badge + audio button. The mock dropped the legacy
+          two-column layout in favor of a centered hero word with the
+          context sentence pinned underneath. */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[9px] font-semibold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded">
+          noun
+        </span>
+        <button
+          className="rounded-full flex items-center justify-center transition-colors hover:bg-indigo-500/20"
+          style={{ width: 26, height: 26, backgroundColor: 'rgba(99,102,241,0.15)', color: '#a5b4fc' }}
+          title="Reproducir audio"
+        >
+          <Volume2 size={11} />
         </button>
+      </div>
+      <div className="text-center py-1 mb-3">
+        <div className="text-[28px] font-bold text-white leading-tight tracking-tight">{mockData.word}</div>
+        <div className="text-[11px] font-mono text-indigo-300/70 mt-1 inline-block bg-zinc-800/60 px-2 py-0.5 rounded">
+          {mockData.phonetic ?? '/ipa/'}
+        </div>
+      </div>
+      <div className="border-t border-zinc-800/60 pt-2.5">
+        <div className="text-[10px] text-zinc-500 italic text-center leading-snug">{mockData.targetSentence}</div>
       </div>
     </div>
   );
@@ -483,48 +514,67 @@ function FrontTemplate({ mockData }: { mockData: CardsTabProps['mockData'] }) {
 
 function BackTemplate({ mockData }: { mockData: CardsTabProps['mockData'] }) {
   return (
-    <div className="font-sans text-zinc-100 space-y-2 animate-in fade-in zoom-in-95 duration-200">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="text-lg font-bold text-white leading-tight">{mockData.word}</div>
-          <div className="text-[10px] font-mono text-zinc-400">{mockData.phonetic ?? '/ipa/'}</div>
+    <div className="font-sans space-y-2">
+      {/* Word header row */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-base font-bold text-white leading-tight truncate">{mockData.word}</div>
+          <div className="text-[10px] font-mono text-zinc-500">{mockData.phonetic ?? '/ipa/'}</div>
         </div>
-        <button className="rounded-full flex items-center justify-center shrink-0" style={{ width: 24, height: 24, backgroundColor: 'rgba(99,102,241,0.2)', color: '#a5b4fc' }}>
+        <button
+          className="rounded-full flex items-center justify-center shrink-0 transition-colors hover:bg-indigo-500/20"
+          style={{ width: 24, height: 24, backgroundColor: 'rgba(99,102,241,0.15)', color: '#a5b4fc' }}
+          title="Reproducir audio"
+        >
           <Volume2 size={10} />
         </button>
       </div>
-      <div style={{ height: 1, backgroundColor: '#3f3f46' }} />
-      <div className="text-[11px] text-zinc-200 bg-zinc-800/60 rounded px-2 py-1">
-        <span className="italic text-zinc-400">(noun)</span> {mockData.translation}
+
+      {/* Translation row */}
+      <div className="flex items-center gap-1.5 bg-zinc-800/50 rounded-lg px-2 py-1.5">
+        <span className="text-[9px] font-medium text-zinc-500 italic shrink-0">noun</span>
+        <span className="w-px h-3 bg-zinc-700 shrink-0" />
+        <span className="text-[11px] text-zinc-200 leading-tight">{mockData.translation}</span>
       </div>
-      <div className="relative rounded-md overflow-hidden h-24" style={{ border: '1px solid #3f3f46', backgroundColor: '#09090b' }}>
+
+      {/* Scene image with overlaid sentence */}
+      <div className="relative rounded-lg overflow-hidden" style={{ height: 72, border: '1px solid #3f3f46' }}>
         <img
           src="https://images.unsplash.com/photo-1574923930958-9b653a0e5148?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=400&q=80"
           alt="Escena"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        <div className="absolute bottom-1 left-0 right-0 flex justify-center px-2">
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+        <div className="absolute bottom-1 inset-x-2 flex justify-center">
           <span
-            className="text-[10px] font-bold text-yellow-300 px-1.5 py-0.5 rounded leading-tight text-center"
-            style={{ textShadow: '0 1px 2px rgba(0,0,0,0.95), 0 0 4px rgba(0,0,0,0.8)' }}
+            className="text-[9px] font-semibold text-yellow-300 leading-tight text-center"
+            style={{ textShadow: '0 1px 3px rgba(0,0,0,1)' }}
           >
             {mockData.targetSentence}
           </span>
         </div>
-        <span className="absolute top-1 right-1 text-[8px] font-mono uppercase tracking-wider bg-black/60 text-emerald-300 px-1 py-0.5 rounded">
+        <span className="absolute top-1 right-1 text-[8px] font-mono uppercase tracking-wider bg-black/50 text-emerald-400 px-1 py-0.5 rounded">
           clean
         </span>
       </div>
-      <div className="text-[10px] text-zinc-300 bg-zinc-800/40 rounded px-2 py-1 italic">
-        {mockData.monolingual ?? 'Definición monolingüe.'}
+
+      {/* Monolingual definition */}
+      <div className="text-[10px] text-zinc-400 italic px-1 leading-snug">
+        {mockData.monolingual ?? 'Definición monolingüe de la palabra en el idioma de origen.'}
       </div>
-      <div className="flex items-start gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="text-[11px] text-zinc-100 leading-snug">{mockData.targetSentence}</div>
+
+      {/* Sentence pair (target + native) with a per-row audio button */}
+      <div className="flex items-start gap-2 bg-zinc-800/30 rounded-lg px-2 py-1.5">
+        <div className="flex-1 min-w-0 space-y-0.5">
+          <div className="text-[10px] text-zinc-200 leading-snug">{mockData.targetSentence}</div>
           <div className="text-[10px] text-zinc-500 italic leading-snug">{mockData.nativeSentence}</div>
         </div>
-        <button className="rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ width: 24, height: 24, backgroundColor: 'rgba(99,102,241,0.2)', color: '#a5b4fc' }}>
-          <Volume2 size={10} />
+        <button
+          className="rounded-full flex items-center justify-center shrink-0 mt-0.5 transition-colors hover:bg-indigo-500/20"
+          style={{ width: 22, height: 22, backgroundColor: 'rgba(99,102,241,0.15)', color: '#a5b4fc' }}
+          title="Reproducir oración"
+        >
+          <Volume2 size={9} />
         </button>
       </div>
     </div>

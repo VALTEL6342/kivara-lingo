@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Keyboard, EyeOff, ChevronDown, Mic, Image as ImageIcon, Wand2,
+  Keyboard, EyeOff, ChevronDown, ChevronRight, Wand2,
   SlidersHorizontal, BookOpen, Languages, Volume2, Sparkles, Mic2,
+  Globe, Zap,
 } from 'lucide-react';
 import { useKivaraStore } from '../../../shared/store';
 import type { AiProvider, PremiumTtsProvider, TranslateProvider } from '../../../shared/types';
@@ -11,13 +12,35 @@ import {
 } from '../../../shared/whisper-presets';
 import { DictPacksSection } from './DictPacksSection';
 
+/**
+ * Settings tab — restructured per the design mock:
+ *
+ *  - "Acceso rápido" QuickRow strip at the top (autoMode, modo lectura,
+ *    subtítulo bilingüe). These are the toggles users flip most often.
+ *  - "Captura avanzada" only appears when autoMode is OFF.
+ *  - Idioma is its own always-visible card (you can't translate without
+ *    knowing source/target).
+ *  - Everything else (Traducción, Diccionarios, IA, TTS, ASR, Limpieza,
+ *    Sincronización, Atajos) collapses into Accordions with a compact
+ *    summary line so the panel feels far less crowded by default.
+ *
+ * All wiring still goes through `useKivaraStore` — this is purely a UI
+ * reshuffle.
+ */
 export function SettingsTab() {
   const {
     capture, setCapture, cleanup, setCleanup, mode, setMode,
     translate, setTranslate, asr, setAsr, ai, setAi, tts, setTts,
   } = useKivaraStore();
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Sub-section open/closed state. Each accordion key is a stable string
+  // — the dictionary packs section is special-cased because it ships its
+  // own header.
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const toggle = (id: string) => setOpen((prev) => ({ ...prev, [id]: !prev[id] }));
+  const isOpen = (id: string) => !!open[id];
+
+  // Flatten store paths to local handlers so the JSX stays readable.
   const autoMode = capture.autoMode;
   const setAutoMode = (v: boolean) => setCapture({ ...capture, autoMode: v });
   const audioSource = capture.audioSource;
@@ -32,109 +55,154 @@ export function SettingsTab() {
   const setHideUI = (v: boolean) => setCleanup({ ...cleanup, hideUI: v });
   const hideShadows = cleanup.hideShadows;
   const setHideShadows = (v: boolean) => setCleanup({ ...cleanup, hideShadows: v });
+  const readingMode = mode === 'reading';
+  const setReadingMode = (v: boolean) => setMode(v ? 'reading' : 'learning');
+
+  /* ── Language label table ──────────────────────────────────────────── */
+  const LANGS: Array<[string, string]> = [
+    ['en', 'Inglés'], ['es', 'Español'], ['fr', 'Francés'], ['de', 'Alemán'],
+    ['it', 'Italiano'], ['pt', 'Portugués'], ['ja', 'Japonés (日本語)'],
+    ['ko', 'Coreano (한국어)'], ['zh', 'Chino (中文)'],
+  ];
+
+  function reopenOnboarding() {
+    try {
+      // Service worker opens the onboarding page in a fresh tab — the
+      // content script can't call chrome.tabs directly.
+      chrome.runtime.sendMessage({
+        type: 'OPEN_URL',
+        url: chrome.runtime.getURL('src/onboarding/index.html'),
+      });
+    } catch {
+      window.open(chrome.runtime.getURL('src/onboarding/index.html'), '_blank');
+    }
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-y-auto">
-      {/* `pb-6` reserves enough scroll room so the last "Atajos" row stays
-          fully readable even when the OS taskbar overlaps the bottom of the
-          panel in dock-to-side mode. */}
-      <div className="p-3 pb-6 space-y-3">
+      <div className="p-3 pb-6 space-y-2">
 
-        {/* Captura */}
-        <Section
-          icon={<Wand2 size={10} />}
-          title="Captura"
-          headerRight={autoMode ? (
-            <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 normal-case tracking-normal">
-              <SoftDot /> auto
+        {/* ── Quick bar — always visible ───────────────────────────────── */}
+        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
+          <div className="px-2.5 py-1.5 border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/60 dark:bg-zinc-900/60">
+            <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              <Zap size={9} /> Acceso rápido
             </span>
-          ) : (
-            <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-500 normal-case tracking-normal">manual</span>
-          )}
-        >
-          <Row label="Modo Automático">
-            <Toggle on={autoMode} onChange={setAutoMode} />
-          </Row>
+          </div>
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+            <QuickRow label="Captura automática" hint={autoMode ? 'VAD · 30s' : 'manual'}>
+              <Toggle on={autoMode} onChange={setAutoMode} />
+            </QuickRow>
+            <QuickRow label="Modo lectura" hint={readingMode ? 'sin popovers' : 'aprendizaje'}>
+              <Toggle on={readingMode} onChange={setReadingMode} />
+            </QuickRow>
+            <QuickRow label="Subtítulo bilingüe" hint={translate.showDualSubtitle ? 'visible' : 'oculto'}>
+              <Toggle
+                on={translate.showDualSubtitle}
+                onChange={(v) => setTranslate({ ...translate, showDualSubtitle: v })}
+              />
+            </QuickRow>
+          </div>
+        </div>
 
-          {autoMode && (
-            <div className="flex items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-500 -my-0.5">
-              <InlineMeta icon={<Mic size={9} />} text="VAD · 30s" />
-              <InlineMeta icon={<ImageIcon size={9} />} text="Centro" />
-              <InlineMeta icon={<EyeOff size={9} />} text="UI off" />
+        {/* ── Captura avanzada — only when modo manual is selected ─────── */}
+        {!autoMode && (
+          <Accordion
+            icon={<Wand2 size={10} />}
+            title="Captura avanzada"
+            summary={`${audioSource} · ${bufferSize}s`}
+            open={isOpen('capture')}
+            onToggle={() => toggle('capture')}
+          >
+            <Row label="Fuente audio">
+              <SegmentedControl
+                options={[{ v: 'tab', l: 'Pestaña' }, { v: 'mic', l: 'Mic' }]}
+                value={audioSource}
+                onChange={setAudioSource}
+              />
+            </Row>
+            <Row label="Buffer rolling" value={`${bufferSize}s`}>
+              <input
+                type="range" min={10} max={60} step={5} value={bufferSize}
+                onChange={(e) => setBufferSize(Number(e.target.value))}
+                className="sl-range w-full"
+              />
+            </Row>
+            <Row label="Fin de frase">
+              <SegmentedControl
+                options={[{ v: 'vad', l: 'VAD' }, { v: 'cue', l: 'Cue exacto' }]}
+                value={endDetect}
+                onChange={setEndDetect}
+              />
+            </Row>
+            <Row label="Momento del frame">
+              <SegmentedControl
+                options={[
+                  { v: 'start', l: 'Inicio' },
+                  { v: 'center', l: 'Centro' },
+                  { v: 'end', l: 'Final' },
+                ]}
+                value={frameMoment}
+                onChange={setFrameMoment}
+              />
+            </Row>
+          </Accordion>
+        )}
+
+        {/* ── Idioma — always visible (paired source / target) ─────────── */}
+        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
+          <div className="px-2.5 py-1.5 border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/60 dark:bg-zinc-900/60">
+            <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              <Globe size={9} /> Idioma
+            </span>
+          </div>
+          <div className="p-2.5 grid grid-cols-2 gap-2">
+            <div className="space-y-0.5">
+              <label className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 block">Aprendo</label>
+              <select
+                value={translate.sourceLang || 'en'}
+                onChange={(e) => setTranslate({ ...translate, sourceLang: e.target.value })}
+                className="sl-select w-full"
+              >
+                {LANGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
             </div>
-          )}
-
-          {!autoMode && (
-            <div className="space-y-2 pt-0.5 animate-in fade-in slide-in-from-top-1 duration-200">
-              <Row label="Fuente audio">
-                <SegmentedControl
-                  options={[{ v: 'tab', l: 'Pestaña' }, { v: 'mic', l: 'Mic' }]}
-                  value={audioSource}
-                  onChange={setAudioSource}
-                />
-              </Row>
-              <Row label="Buffer rolling" value={`${bufferSize}s`}>
-                <input
-                  type="range" min={10} max={60} step={5} value={bufferSize}
-                  onChange={(e) => setBufferSize(Number(e.target.value))}
-                  className="sl-range w-full"
-                />
-              </Row>
-              <Row label="Fin de frase">
-                <SegmentedControl
-                  options={[{ v: 'vad', l: 'VAD' }, { v: 'cue', l: 'Cue exacto' }]}
-                  value={endDetect}
-                  onChange={setEndDetect}
-                />
-              </Row>
-              <Row label="Momento del frame">
-                <SegmentedControl
-                  options={[
-                    { v: 'start', l: 'Inicio' },
-                    { v: 'center', l: 'Centro' },
-                    { v: 'end', l: 'Final' },
-                  ]}
-                  value={frameMoment}
-                  onChange={setFrameMoment}
-                />
-              </Row>
+            <div className="space-y-0.5">
+              <label className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 block">Mi idioma</label>
+              <select
+                value={translate.targetLanguage || 'es'}
+                onChange={(e) => setTranslate({ ...translate, targetLanguage: e.target.value })}
+                className="sl-select w-full"
+              >
+                {LANGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
             </div>
-          )}
-        </Section>
+          </div>
+        </div>
 
-        {/* Modo */}
-        <Section icon={<BookOpen size={10} />} title="Modo" headerRight={null}>
-          <Row label="Modo Lectura">
-            <Toggle on={mode === 'reading'} onChange={(v) => setMode(v ? 'reading' : 'learning')} />
-          </Row>
-          <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug -mt-0.5">
-            En lectura ocultamos los popovers; sigues viendo los subtítulos estilizados.
-          </p>
-        </Section>
-
-        {/* Traducción */}
-        <Section
+        {/* ── Traducción ─────────────────────────────────────────────── */}
+        <Accordion
           icon={<Languages size={10} />}
           title="Traducción"
-          headerRight={
-            <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-500 normal-case tracking-normal">
-              {translate.mode === 'chain' ? 'cadena' : translate.provider}
-            </span>
+          summary={
+            translate.mode === 'chain'
+              ? `cadena · ${translate.tiersEnabled.free ? 'free' : ''}${translate.tiersEnabled.free && translate.tiersEnabled.premium ? '+' : ''}${translate.tiersEnabled.premium ? 'premium' : ''}`
+              : translate.provider
           }
+          open={isOpen('translate')}
+          onToggle={() => toggle('translate')}
         >
           <Row label="Modo">
             <SegmentedControl
-              options={[
-                { v: 'chain', l: 'Cadena' },
-                { v: 'single', l: 'Único' },
-              ]}
+              options={[{ v: 'chain', l: 'Cadena' }, { v: 'single', l: 'Único' }]}
               value={translate.mode}
               onChange={(v) => setTranslate({ ...translate, mode: v as 'chain' | 'single' })}
             />
           </Row>
+
           {translate.mode === 'chain' && (
             <>
-              <Row label="Usar nivel free">
+              <Row label="Nivel free (MyMemory, Lingva)">
                 <Toggle
                   on={translate.tiersEnabled.free}
                   onChange={(v) =>
@@ -145,7 +213,7 @@ export function SettingsTab() {
                   }
                 />
               </Row>
-              <Row label="Usar nivel premium">
+              <Row label="Nivel premium (DeepL, Google…)">
                 <Toggle
                   on={translate.tiersEnabled.premium}
                   onChange={(v) =>
@@ -156,20 +224,14 @@ export function SettingsTab() {
                   }
                 />
               </Row>
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug -mt-0.5">
-                Orden: diccionario offline → free (MyMemory, Lingva) → premium (DeepL,
-                Google, LibreTranslate). Los premium sin API key se saltean automáticamente.
-              </p>
             </>
           )}
           {translate.mode === 'single' && (
             <Row label="Proveedor">
               <select
                 value={translate.provider}
-                onChange={(e) =>
-                  setTranslate({ ...translate, provider: e.target.value as TranslateProvider })
-                }
-                className="sl-select w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                onChange={(e) => setTranslate({ ...translate, provider: e.target.value as TranslateProvider })}
+                className="sl-select w-full"
               >
                 <option value="offline">Offline (diccionario local)</option>
                 <option value="mymemory">MyMemory (free)</option>
@@ -180,134 +242,104 @@ export function SettingsTab() {
               </select>
             </Row>
           )}
-          <Row label="Idioma que aprendo">
-            <select
-              value={translate.sourceLang || 'en'}
-              onChange={(e) => setTranslate({ ...translate, sourceLang: e.target.value })}
-              className="sl-select w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-            >
-              <option value="en">Inglés (English)</option>
-              <option value="fr">Francés (Français)</option>
-              <option value="de">Alemán (Deutsch)</option>
-              <option value="it">Italiano</option>
-              <option value="pt">Portugués</option>
-              <option value="ja">Japonés (日本語)</option>
-              <option value="ko">Coreano (한국어)</option>
-              <option value="zh">Chino (中文)</option>
-            </select>
-          </Row>
-          <Row label="Mi idioma nativo">
-            <select
-              value={translate.targetLanguage || 'es'}
-              onChange={(e) => setTranslate({ ...translate, targetLanguage: e.target.value })}
-              className="sl-select w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-            >
-              <option value="es">Español</option>
-              <option value="en">Inglés (English)</option>
-              <option value="fr">Francés (Français)</option>
-              <option value="de">Alemán (Deutsch)</option>
-              <option value="it">Italiano</option>
-              <option value="pt">Portugués</option>
-              <option value="ja">Japonés (日本語)</option>
-              <option value="ko">Coreano (한국어)</option>
-              <option value="zh">Chino (中文)</option>
-            </select>
-          </Row>
-          <Row label="Subtítulo bilingüe">
-            <Toggle
-              on={translate.showDualSubtitle}
-              onChange={(v) => setTranslate({ ...translate, showDualSubtitle: v })}
-            />
-          </Row>
-          <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug -mt-0.5">
-            Muestra la frase completa traducida al idioma destino debajo del subtítulo original
-            (como Language Reactor / Trancy).
-          </p>
-          {/* MyMemory email (raises 5k → 50k chars/day) */}
-          <Row label="Email MyMemory (opcional)">
-            <input
-              type="email"
-              value={translate.myMemoryEmail}
-              onChange={(e) => setTranslate({ ...translate, myMemoryEmail: e.target.value })}
-              placeholder="ej. you@example.com — sube cuota a 50 000 chars/día"
-              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-            />
-          </Row>
-          <Row label="Lingva URL">
-            <input
-              type="text"
-              value={translate.lingvaUrl}
-              onChange={(e) => setTranslate({ ...translate, lingvaUrl: e.target.value })}
-              placeholder="https://lingva.thedaviddelta.com"
-              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-            />
-          </Row>
-          <Row label="DeepL API token">
-            <input
-              type="password"
-              value={translate.deeplToken}
-              onChange={(e) => setTranslate({ ...translate, deeplToken: e.target.value })}
-              placeholder="xxxxxxxx:fx para Free, sin :fx para Pro"
-              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-            />
-          </Row>
-          <Row label="Google Cloud API key">
-            <input
-              type="password"
-              value={translate.googleToken}
-              onChange={(e) => setTranslate({ ...translate, googleToken: e.target.value })}
-              placeholder="AIza..."
-              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-            />
-          </Row>
-          <Row label="LibreTranslate URL">
-            <input
-              type="text"
-              value={translate.libreTranslateUrl}
-              onChange={(e) => setTranslate({ ...translate, libreTranslateUrl: e.target.value })}
-              placeholder="https://libretranslate.com o http://localhost:5000"
-              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-            />
-          </Row>
-          <Row label="LibreTranslate key (opcional)">
-            <input
-              type="password"
-              value={translate.libreTranslateToken}
-              onChange={(e) => setTranslate({ ...translate, libreTranslateToken: e.target.value })}
-              placeholder="déjalo vacío para instancias públicas o self-host"
-              className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
-            />
-          </Row>
-          <Row label="Caché (días)" value={`${translate.cacheTtlDays}d`}>
+
+          {/* Nested API tokens accordion */}
+          <NestedAccordion
+            title="Tokens de API"
+            open={isOpen('translate-tokens')}
+            onToggle={() => toggle('translate-tokens')}
+          >
+            <Row label="MyMemory email (opcional)">
+              <input
+                type="email"
+                value={translate.myMemoryEmail}
+                onChange={(e) => setTranslate({ ...translate, myMemoryEmail: e.target.value })}
+                placeholder="you@example.com"
+                className="sl-input w-full"
+              />
+            </Row>
+            <Row label="Lingva URL">
+              <input
+                type="text"
+                value={translate.lingvaUrl}
+                onChange={(e) => setTranslate({ ...translate, lingvaUrl: e.target.value })}
+                placeholder="https://lingva.thedaviddelta.com"
+                className="sl-input sl-mono w-full"
+              />
+            </Row>
+            <Row label="DeepL API key">
+              <input
+                type="password"
+                value={translate.deeplToken}
+                onChange={(e) => setTranslate({ ...translate, deeplToken: e.target.value })}
+                placeholder="xxxxxxxx:fx"
+                className="sl-input sl-mono w-full"
+              />
+            </Row>
+            <Row label="Google Cloud API key">
+              <input
+                type="password"
+                value={translate.googleToken}
+                onChange={(e) => setTranslate({ ...translate, googleToken: e.target.value })}
+                placeholder="AIza..."
+                className="sl-input sl-mono w-full"
+              />
+            </Row>
+            <Row label="LibreTranslate URL">
+              <input
+                type="text"
+                value={translate.libreTranslateUrl}
+                onChange={(e) => setTranslate({ ...translate, libreTranslateUrl: e.target.value })}
+                placeholder="https://libretranslate.com"
+                className="sl-input sl-mono w-full"
+              />
+            </Row>
+            <Row label="LibreTranslate key">
+              <input
+                type="password"
+                value={translate.libreTranslateToken}
+                onChange={(e) => setTranslate({ ...translate, libreTranslateToken: e.target.value })}
+                placeholder="(vacío para instancias públicas)"
+                className="sl-input w-full"
+              />
+            </Row>
+          </NestedAccordion>
+
+          <Row label="Caché" value={`${translate.cacheTtlDays}d`}>
             <input
               type="range" min={1} max={90} step={1} value={translate.cacheTtlDays}
               onChange={(e) => setTranslate({ ...translate, cacheTtlDays: Number(e.target.value) })}
               className="sl-range w-full"
             />
           </Row>
-          <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug -mt-0.5">
-            El diccionario offline siempre se consulta primero. Los proveedores externos solo se usan si la palabra no aparece allí, y las respuestas se cachean en IndexedDB.
-          </p>
-        </Section>
+        </Accordion>
 
-        {/* Diccionarios offline (Yomitan packs) */}
-        <DictPacksSection />
+        {/* ── Diccionarios offline ───────────────────────────────────── */}
+        <Accordion
+          icon={<BookOpen size={10} />}
+          title="Diccionarios offline"
+          summary="yomitan"
+          open={isOpen('dict')}
+          onToggle={() => toggle('dict')}
+          noPadding
+        >
+          <DictPacksSection />
+        </Accordion>
 
-        {/* IA (premium) */}
-        <Section
+        {/* ── IA premium ─────────────────────────────────────────────── */}
+        <Accordion
           icon={<Sparkles size={10} />}
-          title="IA (premium)"
-          headerRight={
-            <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-500 normal-case tracking-normal">
-              {ai.provider === 'disabled' ? 'off' : ai.provider}
-            </span>
-          }
+          title="IA premium"
+          summary={ai.provider === 'disabled' ? 'desactivada' : `${ai.provider}${ai.apiKey ? '' : ' · sin key'}`}
+          summaryColor={ai.provider !== 'disabled' && ai.apiKey ? 'text-indigo-500 dark:text-indigo-400' : undefined}
+          open={isOpen('ai')}
+          onToggle={() => toggle('ai')}
         >
           <Row label="Proveedor">
             <select
               value={ai.provider}
               onChange={(e) => setAi({ ...ai, provider: e.target.value as AiProvider })}
-              className="sl-select w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+              className="sl-select w-full"
             >
               <option value="disabled">Desactivado</option>
               <option value="openai">OpenAI</option>
@@ -323,7 +355,7 @@ export function SettingsTab() {
                   value={ai.apiKey}
                   onChange={(e) => setAi({ ...ai, apiKey: e.target.value })}
                   placeholder="sk-... / Anthropic / Gemini API key"
-                  className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                  className="sl-input w-full"
                 />
               </Row>
               <Row label="Modelo">
@@ -336,16 +368,16 @@ export function SettingsTab() {
                     : ai.provider === 'anthropic' ? 'claude-3-5-haiku-latest'
                     : 'gemini-1.5-flash'
                   }
-                  className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                  className="sl-input w-full"
                 />
               </Row>
-              <Row label="Idioma nativo (opcional)">
+              <Row label="Idioma nativo (override)">
                 <input
                   type="text"
                   value={ai.nativeLanguage ?? ''}
                   onChange={(e) => setAi({ ...ai, nativeLanguage: e.target.value.trim() || undefined })}
-                  placeholder={`(usa ${translate.targetLanguage})`}
-                  className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                  placeholder={`auto (${translate.targetLanguage})`}
+                  className="sl-input w-full"
                 />
               </Row>
               <Row label="Enriquecer al guardar">
@@ -354,7 +386,7 @@ export function SettingsTab() {
               <Row label="Enriquecer en hover">
                 <Toggle on={ai.enrichOnHover} onChange={(v) => setAi({ ...ai, enrichOnHover: v })} />
               </Row>
-              <Row label="Caché (días)" value={`${ai.cacheTtlDays}d`}>
+              <Row label="Caché" value={`${ai.cacheTtlDays}d`}>
                 <input
                   type="range" min={1} max={90} step={1} value={ai.cacheTtlDays}
                   onChange={(e) => setAi({ ...ai, cacheTtlDays: Number(e.target.value) })}
@@ -362,40 +394,28 @@ export function SettingsTab() {
                 />
               </Row>
               {!ai.apiKey && (
-                <p className="text-[10px] text-red-600 dark:text-red-400 leading-snug -mt-0.5">
+                <p className="text-[10px] text-rose-600 dark:text-rose-400 leading-snug">
                   Falta la API key — las llamadas IA se omitirán hasta que la añadas.
                 </p>
               )}
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug -mt-0.5">
-                Las respuestas se cachean en IndexedDB con TTL configurable. El proveedor recibe
-                la palabra y la frase del cue; sin tracking adicional. OpenAI tts-1 (audio) cuesta
-                ~USD 0.015 / 1 000 caracteres.
-              </p>
             </>
           )}
-        </Section>
+        </Accordion>
 
-        {/* TTS premium — audio descargable adjuntado a las tarjetas Anki.
-            Permite elegir entre la cadena `chrome.tts → SpeechSynthesis`
-            (gratis, voces del SO) y dos proveedores remotos con archivos
-            adjuntos: OpenAI tts-1 (~USD 0.015 / 1k chars) y ElevenLabs
-            (mejor calidad, ~USD 0.18 / 1k chars). El modo `auto` elige
-            ElevenLabs si hay credenciales, si no OpenAI, si no la cadena
-            offline. */}
-        <Section
+        {/* ── TTS premium ────────────────────────────────────────────── */}
+        <Accordion
           icon={<Mic2 size={10} />}
           title="TTS premium"
-          headerRight={
-            <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-500 normal-case tracking-normal">
-              {tts.provider === 'disabled' ? 'off' : tts.provider}
-            </span>
-          }
+          summary={tts.provider === 'disabled' ? 'desactivado' : tts.provider}
+          summaryColor={tts.provider !== 'disabled' ? 'text-indigo-500 dark:text-indigo-400' : undefined}
+          open={isOpen('tts')}
+          onToggle={() => toggle('tts')}
         >
           <Row label="Proveedor">
             <select
               value={tts.provider}
               onChange={(e) => setTts({ ...tts, provider: e.target.value as PremiumTtsProvider })}
-              className="sl-select w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+              className="sl-select w-full"
             >
               <option value="auto">Auto (ElevenLabs ▸ OpenAI ▸ template)</option>
               <option value="elevenlabs">ElevenLabs</option>
@@ -411,7 +431,7 @@ export function SettingsTab() {
                   value={tts.elevenLabsApiKey}
                   onChange={(e) => setTts({ ...tts, elevenLabsApiKey: e.target.value })}
                   placeholder="xi-..."
-                  className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                  className="sl-input w-full"
                 />
               </Row>
               <Row label="ElevenLabs · Voice ID">
@@ -420,14 +440,14 @@ export function SettingsTab() {
                   value={tts.elevenLabsVoiceId}
                   onChange={(e) => setTts({ ...tts, elevenLabsVoiceId: e.target.value.trim() })}
                   placeholder="21m00Tcm4TlvDq8ikWAM (Rachel)"
-                  className="sl-input w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                  className="sl-input w-full"
                 />
               </Row>
               <Row label="ElevenLabs · Modelo">
                 <select
                   value={tts.elevenLabsModelId}
                   onChange={(e) => setTts({ ...tts, elevenLabsModelId: e.target.value })}
-                  className="sl-select w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                  className="sl-select w-full"
                 >
                   <option value="eleven_multilingual_v2">eleven_multilingual_v2 (29 idiomas)</option>
                   <option value="eleven_turbo_v2_5">eleven_turbo_v2_5 (más barato)</option>
@@ -436,33 +456,18 @@ export function SettingsTab() {
               </Row>
             </>
           )}
-          {tts.provider !== 'disabled' && (
-            <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug -mt-0.5">
-              {tts.provider === 'elevenlabs' || (tts.provider === 'auto' && tts.elevenLabsApiKey)
-                ? 'ElevenLabs activo · ~USD 0.18 / 1 000 caracteres en el plan Starter.'
-                : tts.provider === 'openai' || (tts.provider === 'auto' && !tts.elevenLabsApiKey)
-                ? 'OpenAI tts-1 activo · ~USD 0.015 / 1 000 caracteres. Reusa la API key del proveedor IA.'
-                : 'Configura una API key para activar la generación de audio premium.'}
-            </p>
-          )}
-          {tts.provider !== 'disabled' &&
-            (tts.provider === 'elevenlabs' || tts.provider === 'auto') &&
-            !tts.elevenLabsApiKey &&
-            tts.provider === 'elevenlabs' && (
-              <p className="text-[10px] text-red-600 dark:text-red-400 leading-snug -mt-0.5">
-                Falta la API key de ElevenLabs — el TTS premium no funcionará en modo explícito.
-              </p>
-            )}
-        </Section>
+        </Accordion>
 
-        {/* ASR — on-device transcription via Whisper.cpp WASM. The user
-            picks a model size based on their hardware budget; the URL is
-            auto-filled from the preset table in `whisper-asr.ts`. The
-            first download streams a progress percentage from the offscreen
-            document via `OFFSCREEN_WHISPER_MODEL_PROGRESS`. Subsequent
-            loads from `Cache Storage` are instant. */}
-        <Section icon={<Volume2 size={10} />} title="Transcripción on-device">
-          <Row label="Habilitar ASR (Whisper)">
+        {/* ── Whisper ASR (on-device) ────────────────────────────────── */}
+        <Accordion
+          icon={<Volume2 size={10} />}
+          title="Transcripción on-device"
+          summary={asr.enabled ? asr.model : 'desactivada'}
+          summaryColor={asr.enabled ? 'text-indigo-500 dark:text-indigo-400' : undefined}
+          open={isOpen('asr')}
+          onToggle={() => toggle('asr')}
+        >
+          <Row label="Habilitar Whisper ASR">
             <Toggle on={asr.enabled} onChange={(v) => setAsr({ ...asr, enabled: v })} />
           </Row>
           {asr.enabled && (
@@ -471,27 +476,20 @@ export function SettingsTab() {
                 <select
                   value={asr.model}
                   onChange={(e) => {
-                    const next = e.target.value as 'tiny' | 'base' | 'small' | 'medium';
+                    const next = e.target.value as WhisperModelKey;
                     setAsr({
                       ...asr,
                       model: next,
-                      // Auto-fill the URL whenever the user picks a preset
-                      // so they don't have to copy/paste from the README.
-                      // Manual override still wins if `modelUrl` was set
-                      // explicitly — the SW reads `asr.modelUrl ||
-                      // PRESETS[asr.model].url`.
                       modelUrl: WHISPER_MODEL_PRESETS[next].url,
                     });
                   }}
-                  className="sl-select w-full text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                  className="sl-select w-full"
                 >
                   {(Object.entries(WHISPER_MODEL_PRESETS) as Array<[
-                    keyof typeof WHISPER_MODEL_PRESETS,
-                    (typeof WHISPER_MODEL_PRESETS)[keyof typeof WHISPER_MODEL_PRESETS],
+                    WhisperModelKey,
+                    (typeof WHISPER_MODEL_PRESETS)[WhisperModelKey],
                   ]>).map(([key, preset]) => (
-                    <option key={key} value={key}>
-                      {preset.label}
-                    </option>
+                    <option key={key} value={key}>{preset.label}</option>
                   ))}
                 </select>
               </Row>
@@ -501,7 +499,7 @@ export function SettingsTab() {
                   value={asr.glueUrl ?? ''}
                   onChange={(e) => setAsr({ ...asr, glueUrl: e.target.value.trim() || undefined })}
                   placeholder="https://tu-cdn.com/whisper.js"
-                  className="sl-input sl-mono w-full text-[10px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                  className="sl-input sl-mono w-full"
                 />
               </Row>
               <Row label="Modelo URL (override)">
@@ -510,68 +508,70 @@ export function SettingsTab() {
                   value={asr.modelUrl ?? ''}
                   onChange={(e) => setAsr({ ...asr, modelUrl: e.target.value.trim() || undefined })}
                   placeholder={WHISPER_MODEL_PRESETS[asr.model].url}
-                  className="sl-input sl-mono w-full text-[10px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200"
+                  className="sl-input sl-mono w-full"
                 />
               </Row>
               <WhisperModelProgress modelKey={asr.model} />
             </>
           )}
-          <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug -mt-0.5">
-            Whisper.cpp corre en CPU vía WebAssembly (no usa GPU). Los modelos
-            más grandes son más precisos pero 5-10× más lentos transcribiendo.
-            <strong className="block mt-1">Tiny</strong> recomendado para portátiles
-            sin acelerador dedicado; <strong>Base</strong> para escritorios; <strong>Small</strong> /
-            <strong> Medium</strong> sólo si tu CPU lo aguanta. La primera descarga queda
-            cacheada en el navegador y no vuelve a salir a la red.
+          <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug">
+            Whisper.cpp vía WebAssembly (sin GPU). <strong>Tiny</strong> recomendado para portátiles; <strong>Base</strong> para escritorios.
           </p>
-        </Section>
+        </Accordion>
 
-        {/* Limpieza visual */}
-        <Section icon={<EyeOff size={10} />} title="Limpieza visual">
+        {/* ── Limpieza visual ────────────────────────────────────────── */}
+        <Accordion
+          icon={<EyeOff size={10} />}
+          title="Limpieza visual"
+          summary={`UI ${hideUI ? 'off' : 'on'} · sombras ${hideShadows ? 'off' : 'on'}`}
+          open={isOpen('cleanup')}
+          onToggle={() => toggle('cleanup')}
+        >
           <Row label="Ocultar UI del player">
             <Toggle on={hideUI} onChange={setHideUI} />
           </Row>
           <Row label="Sin sombras / gradientes">
             <Toggle on={hideShadows} onChange={setHideShadows} />
           </Row>
-        </Section>
+        </Accordion>
 
-        {/* Sincronización fina (collapsible) */}
-        <Section
+        {/* ── Sincronización fina ────────────────────────────────────── */}
+        <Accordion
           icon={<SlidersHorizontal size={10} />}
           title="Sincronización fina"
-          collapsible
-          open={showAdvanced}
-          onToggle={() => setShowAdvanced(!showAdvanced)}
+          summary="pre/post roll"
+          open={isOpen('sync')}
+          onToggle={() => toggle('sync')}
         >
-          <CompactSlider label="Pre-roll"   defaultValue={300} max={1500} unit="ms" />
-          <CompactSlider label="Post-roll"  defaultValue={400} max={1500} unit="ms" />
-          <CompactSlider label="Fusión cues" defaultValue={300} max={1000} unit="ms" />
-          <p className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-snug pt-1">
-            {autoMode
-              ? 'El Modo Auto ya optimiza estos valores. Ajusta solo si tu plataforma desincroniza.'
-              : 'Compensa lag entre subtítulo y audio.'}
-          </p>
-        </Section>
+          <CompactSlider label="Pre-roll"    defaultValue={300}  max={1500} unit="ms" />
+          <CompactSlider label="Post-roll"   defaultValue={400}  max={1500} unit="ms" />
+          <CompactSlider label="Fusión cues" defaultValue={300}  max={1000} unit="ms" />
+        </Accordion>
 
-        {/* Atajos */}
-        <Section icon={<Keyboard size={10} />} title="Atajos">
-          <div className="-my-1">
+        {/* ── Atajos ─────────────────────────────────────────────────── */}
+        <Accordion
+          icon={<Keyboard size={10} />}
+          title="Atajos de teclado"
+          summary="Ctrl+S · Alt+C · Alt+R"
+          open={isOpen('keys')}
+          onToggle={() => toggle('keys')}
+        >
+          <div className="-my-0.5">
             {[
-              { l: 'Guardar tarjeta',    keys: ['Ctrl', 'S'] },
-              { l: 'Toggle subtítulos',  keys: ['Alt', 'C'] },
-              { l: 'Repetir frase',      keys: ['Alt', 'R'] },
-              { l: 'Re-capturar frame',  keys: ['Alt', 'V'] },
-              { l: 'Abrir / cerrar panel', keys: ['Alt', 'K'] },
-              { l: 'Separar / unir expresión',  keys: ['Scroll', 'hover'] },
-            ].map(s => (
+              { l: 'Guardar tarjeta',         keys: ['Ctrl', 'S'] },
+              { l: 'Toggle subtítulos',        keys: ['Alt', 'C'] },
+              { l: 'Repetir frase',            keys: ['Alt', 'R'] },
+              { l: 'Re-capturar frame',        keys: ['Alt', 'V'] },
+              { l: 'Abrir / cerrar panel',     keys: ['Alt', 'K'] },
+              { l: 'Separar expresión',        keys: ['Scroll', 'hover'] },
+            ].map((s) => (
               <div key={s.l} className="flex items-center justify-between py-1 text-[11px]">
                 <span className="text-zinc-600 dark:text-zinc-400">{s.l}</span>
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-0.5">
                   {s.keys.map((k, i) => (
                     <React.Fragment key={k}>
-                      {i > 0 && <span className="text-zinc-400 dark:text-zinc-600 text-[9px]">+</span>}
-                      <kbd className="font-sans font-semibold text-[10px] text-zinc-700 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 rounded px-1.5 py-[1px]">
+                      {i > 0 && <span className="text-zinc-400 dark:text-zinc-600 text-[9px] mx-0.5">+</span>}
+                      <kbd className="font-sans text-[10px] text-zinc-700 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 rounded px-1.5 py-px">
                         {k}
                       </kbd>
                     </React.Fragment>
@@ -580,72 +580,130 @@ export function SettingsTab() {
               </div>
             ))}
           </div>
+        </Accordion>
+
+        {/* ── Repetir configuración inicial ─────────────────────────── */}
+        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2.5">
           <button
             type="button"
-            onClick={() => {
-              try {
-                // Send to background to open with chrome.tabs — content scripts
-                // can't call chrome.tabs directly and window.open resolves
-                // relative to the host page (YouTube/Netflix/etc).
-                chrome.runtime.sendMessage({ type: 'OPEN_URL', url: chrome.runtime.getURL('src/onboarding/index.html') });
-              } catch {
-                // Last resort — at least try the extension URL directly
-                window.open(chrome.runtime.getURL('src/onboarding/index.html'), '_blank');
-              }
-            }}
-            className="w-full mt-2 flex items-center justify-center gap-1.5 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/15 border border-indigo-200 dark:border-indigo-500/25 rounded-md px-2 py-1.5 transition-colors"
+            onClick={reopenOnboarding}
+            className="w-full flex items-center justify-center gap-1.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50/60 dark:hover:bg-indigo-500/10 py-1.5 rounded-md transition-colors"
           >
             Repetir configuración inicial
           </button>
-        </Section>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ---------- shared components (mirror SubtitlesTab) ---------- */
+/* ─── Accordion ───────────────────────────────────────────────────────── */
 
-function Section({
-  icon, title, children, collapsible, open, onToggle, headerRight,
+function Accordion({
+  icon, title, summary, summaryColor, open, onToggle, children, noPadding,
 }: {
-  icon: React.ReactNode; title: React.ReactNode; children: React.ReactNode;
-  collapsible?: boolean; open?: boolean; onToggle?: () => void;
-  headerRight?: React.ReactNode;
+  icon: React.ReactNode;
+  title: string;
+  summary?: string;
+  summaryColor?: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+  noPadding?: boolean;
 }) {
-  const header = (
-    <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-zinc-50/60 dark:bg-zinc-900/60 border-b border-zinc-100 dark:border-zinc-800/60">
-      <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-        {icon}{title}
-      </span>
-      <span className="flex items-center gap-1.5">
-        {headerRight}
-        {collapsible && (
-          <ChevronDown size={12} className={`text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-        )}
-      </span>
-    </div>
-  );
   return (
     <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-      {collapsible
-        ? <button onClick={onToggle} className="w-full text-left hover:bg-zinc-100/40 dark:hover:bg-zinc-800/40 transition-colors">{header}</button>
-        : header}
-      {(!collapsible || open) && (
-        <div className="p-2.5 space-y-2">{children}</div>
-      )}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-2 px-2.5 py-2 bg-zinc-50/60 dark:bg-zinc-900/60 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/40 transition-colors"
+      >
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+          {icon}{title}
+        </span>
+        <span className="flex items-center gap-2 ml-auto shrink-0">
+          {summary && !open && (
+            <span className={`text-[10px] font-medium normal-case tracking-normal ${summaryColor ?? 'text-zinc-400 dark:text-zinc-500'}`}>
+              {summary}
+            </span>
+          )}
+          <ChevronDown size={12} className={`text-zinc-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: open ? '1fr' : '0fr',
+          transition: 'grid-template-rows 220ms ease',
+        }}
+      >
+        <div className="overflow-hidden">
+          <div className={noPadding ? '' : 'p-2.5 space-y-2 border-t border-zinc-100 dark:border-zinc-800/60'}>
+            {children}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function InlineMeta({ icon, text }: { icon: React.ReactNode; text: string }) {
+/* ─── NestedAccordion ────────────────────────────────────────────────── */
+
+function NestedAccordion({
+  title, open, onToggle, children,
+}: {
+  title: string; open: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-50 dark:bg-zinc-800/40 text-zinc-500 dark:text-zinc-400">
-      {icon}{text}
-    </span>
+    <div className="rounded-md border border-zinc-200 dark:border-zinc-800/80 overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-2 px-2 py-1.5 bg-zinc-50/50 dark:bg-zinc-800/30 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/60 transition-colors"
+      >
+        <span className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">{title}</span>
+        <ChevronRight size={11} className={`text-zinc-400 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
+      </button>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: open ? '1fr' : '0fr',
+          transition: 'grid-template-rows 200ms ease',
+        }}
+      >
+        <div className="overflow-hidden">
+          <div className="p-2 space-y-2 border-t border-zinc-100 dark:border-zinc-800/60">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
-function Row({ label, value, children }: { label: React.ReactNode; value?: string; children: React.ReactNode }) {
+/* ─── QuickRow ───────────────────────────────────────────────────────── */
+
+function QuickRow({
+  label, hint, children,
+}: {
+  label: string; hint?: string; children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between px-2.5 py-2 gap-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300">{label}</span>
+        {hint && <span className="text-[10px] text-zinc-400 dark:text-zinc-600 font-mono">{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* ─── Row ────────────────────────────────────────────────────────────── */
+
+function Row({
+  label, value, children,
+}: {
+  label: React.ReactNode; value?: string; children: React.ReactNode;
+}) {
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-2">
@@ -661,12 +719,16 @@ function Row({ label, value, children }: { label: React.ReactNode; value?: strin
   );
 }
 
-function SegmentedControl<T extends string>({ options, value, onChange }: {
+/* ─── SegmentedControl ───────────────────────────────────────────────── */
+
+function SegmentedControl<T extends string>({
+  options, value, onChange,
+}: {
   options: { v: T; l: string }[]; value: T; onChange: (v: T) => void;
 }) {
   return (
     <div className="flex bg-zinc-100 dark:bg-zinc-800/70 rounded-md p-0.5">
-      {options.map(opt => (
+      {options.map((opt) => (
         <button
           key={opt.v}
           onClick={() => onChange(opt.v)}
@@ -683,77 +745,58 @@ function SegmentedControl<T extends string>({ options, value, onChange }: {
   );
 }
 
+/* ─── Toggle ─────────────────────────────────────────────────────────── */
+
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
-  // Detect dark mode from parent - the panel always has `.dark` class in dark mode
   const ref = React.useRef<HTMLButtonElement>(null);
   const [isDark, setIsDark] = React.useState(false);
   React.useEffect(() => {
-    if (ref.current) {
-      setIsDark(!!ref.current.closest('.dark'));
-    }
-  });
-
+    if (ref.current) setIsDark(!!ref.current.closest('.dark'));
+  }, []);
   const bgOn = isDark ? '#6366f1' : '#4f46e5';
   const bgOff = isDark ? '#3f3f46' : '#d4d4d8';
-
   return (
     <button
       ref={ref}
       type="button"
       onClick={() => onChange(!on)}
       style={{
-        position: 'relative',
-        flexShrink: 0,
-        width: 36,
-        height: 20,
-        borderRadius: 9999,
-        backgroundColor: on ? bgOn : bgOff,
-        transition: 'background-color 150ms',
-        border: 'none',
-        cursor: 'pointer',
-        padding: 0,
+        position: 'relative', flexShrink: 0, width: 34, height: 19,
+        borderRadius: 9999, backgroundColor: on ? bgOn : bgOff,
+        transition: 'background-color 150ms', border: 'none', cursor: 'pointer', padding: 0,
       }}
     >
-      <span
-        style={{
-          position: 'absolute',
-          top: 2,
-          left: 2,
-          width: 16,
-          height: 16,
-          borderRadius: 9999,
-          backgroundColor: '#fff',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
-          transition: 'transform 200ms',
-          transform: on ? 'translateX(16px)' : 'translateX(0)',
-        }}
-      />
+      <span style={{
+        position: 'absolute', top: 2, left: 2, width: 15, height: 15,
+        borderRadius: 9999, backgroundColor: '#fff',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+        transition: 'transform 200ms',
+        transform: on ? 'translateX(15px)' : 'translateX(0)',
+      }} />
     </button>
   );
 }
 
-function SoftDot() {
-  return (
-    <span style={{ position: 'relative', display: 'inline-flex', width: 8, height: 8 }}>
-      <span className="absolute inset-0 rounded-full animate-ping" style={{ backgroundColor: 'rgba(74,222,128,0.4)', animationDuration: '2.4s' }} />
-      <span style={{ position: 'relative', display: 'inline-flex', width: 8, height: 8, borderRadius: 9999, backgroundColor: '#22c55e' }} />
-    </span>
-  );
-}
+/* ─── CompactSlider ──────────────────────────────────────────────────── */
 
-function CompactSlider({ label, defaultValue, max, unit }: { label: string; defaultValue: number; max: number; unit: string }) {
+function CompactSlider({
+  label, defaultValue, max, unit,
+}: {
+  label: string; defaultValue: number; max: number; unit: string;
+}) {
   const [v, setV] = useState(defaultValue);
   return (
     <Row label={label} value={`${v}${unit}`}>
       <input
-        type="range"
-        min={0} max={max} step={50} value={v}
+        type="range" min={0} max={max} step={50} value={v}
         onChange={(e) => setV(Number(e.target.value))}
         className="sl-range w-full"
       />
     </Row>
   );
 }
+
+/* ─── WhisperModelProgress ───────────────────────────────────────────── */
 
 /**
  * Listens for `OFFSCREEN_WHISPER_MODEL_PROGRESS` messages broadcast by the
@@ -784,7 +827,6 @@ function WhisperModelProgress({ modelKey }: { modelKey: WhisperModelKey }) {
         done: boolean;
         cached: boolean;
       };
-      // Only show progress for the model the user currently has selected.
       if (info.modelKey !== null && info.modelKey !== modelKey) return;
       setProgress({
         fraction: info.fraction,
@@ -793,7 +835,6 @@ function WhisperModelProgress({ modelKey }: { modelKey: WhisperModelKey }) {
         done: info.done,
         cached: info.cached,
       });
-      // Auto-hide after completion.
       if (info.done) {
         setTimeout(() => setProgress(null), 2000);
       }

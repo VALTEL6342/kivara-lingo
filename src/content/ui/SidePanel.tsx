@@ -229,35 +229,50 @@ export function SidePanel({
         </div>
       </div>
 
-      {/* Tabs Nav */}
-      <div className="flex border-b border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950">
-        {[
-          { id: 'subtitles', label: 'Subtítulos', icon: Subtitles },
-          { id: 'cards', label: 'Tarjetas', icon: LayoutGrid },
-          { id: 'settings', label: 'Ajustes', icon: Settings },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-all relative ${
-              activeTab === tab.id 
-                ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-500/5' 
-                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50'
-            }`}
-          >
-            <tab.icon size={16} />
-            {tab.label}
-            {activeTab === tab.id && (
-              <div className="absolute bottom-0 inset-x-0 h-0.5 bg-indigo-600 dark:bg-indigo-500"></div>
-            )}
-          </button>
-        ))}
+      {/* Tabs Nav — sliding indicator with smooth ease-out animation */}
+      <div className="relative flex border-b border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950">
+        {(() => {
+          const TABS = [
+            { id: 'subtitles', label: 'Subtitles', icon: Subtitles },
+            { id: 'cards',     label: 'Cards',     icon: LayoutGrid },
+            { id: 'settings',  label: 'Settings',  icon: Settings },
+          ] as const;
+          const tabIndex = TABS.findIndex((t) => t.id === activeTab);
+          return (
+            <>
+              <div
+                className="absolute bottom-0 h-0.5 bg-indigo-600 dark:bg-indigo-500 rounded-full transition-all duration-300 ease-out"
+                style={{ width: '33.333%', left: `${tabIndex * 33.333}%` }}
+              />
+              {TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors relative ${
+                    activeTab === tab.id
+                      ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-500/5'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50'
+                  }`}
+                >
+                  <tab.icon size={16} />
+                  {tab.label}
+                </button>
+              ))}
+            </>
+          );
+        })()}
       </div>
 
       {/* Tab Content — `min-h-0` lets `flex-1` shrink below its content
           so the inner `overflow-y-auto` actually scrolls instead of pushing
-          the panel taller than its container. */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+          the panel taller than its container. The `key={activeTab}` +
+          `sl-animate-fade-up` re-trigger the slide-up entrance whenever
+          the user switches tabs (matches the design mock). */}
+      <div
+        key={activeTab}
+        className="flex-1 min-h-0 overflow-hidden sl-animate-fade-up"
+        style={{ animationDuration: '220ms' }}
+      >
         {activeTab === 'subtitles' && (
           <SubtitlesTab styles={styles} setStyles={setStyles} />
         )}

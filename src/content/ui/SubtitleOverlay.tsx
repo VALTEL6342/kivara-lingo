@@ -328,6 +328,10 @@ export function SubtitleOverlay({
       : '0,0,0';
   };
   const backgroundColorWithOpacity = `rgba(${hexToRgb(bgColor)}, ${bgOpacity})`;
+  // Hover background — clamp to be at least as opaque as the base so hovering
+  // can never make the plate harder to read. Mirrors the design mock's logic.
+  const hoverBgOpacity = Math.max(bgOpacity, (subtitleStyles.hoverOpacity ?? 80) / 100);
+  const backgroundColorOnHover = `rgba(${hexToRgb(bgColor)}, ${hoverBgOpacity})`;
 
   const verticalPercent =
     subtitleStyles.verticalOffset ??
@@ -519,7 +523,7 @@ export function SubtitleOverlay({
             textAlign: textAlignment,
             fontSize: `${subtitleStyles.fontSize}px`,
             color: subtitleStyles.color,
-            backgroundColor: !isReading && isHovered ? 'rgba(0,0,0,0.8)' : backgroundColorWithOpacity,
+            backgroundColor: !isReading && isHovered ? backgroundColorOnHover : backgroundColorWithOpacity,
             fontWeight: subtitleStyles.fontWeight,
             textShadow: (() => {
               const s = subtitleStyles.textShadow;
@@ -533,6 +537,10 @@ export function SubtitleOverlay({
               !isReading && isHovered
                 ? '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
                 : 'none',
+            backdropFilter:
+              !isReading && isHovered && subtitleStyles.hoverBlur ? 'blur(2px)' : undefined,
+            WebkitBackdropFilter:
+              !isReading && isHovered && subtitleStyles.hoverBlur ? 'blur(2px)' : undefined,
           }}
         >
           {isReading ? (
